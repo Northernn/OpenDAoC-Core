@@ -1,21 +1,13 @@
 using System;
-using System.Collections;
-using System.Reflection;
+using System.Collections.Generic;
 using DOL.Events;
 using DOL.GS;
-using DOL.GS.Effects;
 using DOL.GS.Scripts;
-using log4net;
 
 namespace DOL.AI.Brain
 {
     public class ArosBrain : StandardMobBrain
     {
-        /// <summary>
-        /// Defines a logger for this class.
-        /// </summary>
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
         /// <summary>
         /// Create a new ArosBrain.
         /// </summary>
@@ -26,14 +18,10 @@ namespace DOL.AI.Brain
             ThinkInterval = 1500;
 
             FSM.ClearStates();
-
             FSM.Add(new StandardMobState_WAKING_UP(this));
-            FSM.Add(new ArosState_RETURN_TO_SPAWN(this));
+            FSM.Add(new StandardMobState_RETURN_TO_SPAWN(this));
             FSM.Add(new ArosState_IDLE(this));
             FSM.Add(new ArosState_AGGRO(this));
-            FSM.Add(new StandardMobState_DEAD(this));
-
-            FSM.SetCurrentState(eFSMStateType.WAKING_UP);
         }
 
         /// <summary>
@@ -45,7 +33,7 @@ namespace DOL.AI.Brain
         {
             Resists();
             ResistsTwo();
-            FSM.Think();
+            base.Think();
         }
 
         public void Resists()
@@ -66,27 +54,27 @@ namespace DOL.AI.Brain
             }
             if (nearbyGuardian != null)
             {
-                Body.AbilityBonus[(int)eProperty.Resist_Body] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Heat] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Cold] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Matter] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Energy] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Spirit] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Slash] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Crush] = m_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Thrust] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Body] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Heat] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Cold] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Matter] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Energy] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Spirit] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Slash] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Crush] = m_value;
+                Body.AbilityBonus[eProperty.Resist_Thrust] = m_value;
             }
             else
             {
-                Body.AbilityBonus[(int)eProperty.Resist_Body] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Heat] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Cold] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Matter] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Energy] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Spirit] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Slash] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Crush] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Thrust] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Body] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Heat] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Cold] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Matter] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Energy] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Spirit] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Slash] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Crush] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Thrust] = min_value;
             }
         }
         public void ResistsTwo()
@@ -106,61 +94,36 @@ namespace DOL.AI.Brain
             }
             if (summonedGuardian != null)
             {
-                Body.AbilityBonus[(int)eProperty.Resist_Body] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Heat] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Cold] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Matter] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Energy] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Spirit] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Slash] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Crush] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.Resist_Thrust] = summonedValue;
-                Body.AbilityBonus[(int)eProperty.MagicAbsorption] = summonedValue + 100;
-                Body.AbilityBonus[(int)eProperty.ArmorAbsorption] = summonedValue + 100;
-                Body.AbilityBonus[(int)eProperty.StyleAbsorb] = summonedValue + 100;
+                Body.AbilityBonus[eProperty.Resist_Body] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Heat] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Cold] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Matter] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Energy] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Spirit] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Slash] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Crush] = summonedValue;
+                Body.AbilityBonus[eProperty.Resist_Thrust] = summonedValue;
+                Body.AbilityBonus[eProperty.MagicAbsorption] = summonedValue + 100;
+                Body.AbilityBonus[eProperty.PhysicalAbsorption] = summonedValue + 100;
+                Body.AbilityBonus[eProperty.StyleAbsorb] = summonedValue + 100;
             }
             else
             {
-                Body.AbilityBonus[(int)eProperty.Resist_Body] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Heat] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Cold] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Matter] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Energy] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Spirit] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Slash] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Crush] = min_value;
-                Body.AbilityBonus[(int)eProperty.Resist_Thrust] = min_value;
-                Body.AbilityBonus[(int)eProperty.MagicAbsorption] = 10;
-                Body.AbilityBonus[(int)eProperty.ArmorAbsorption] = 10;
-                Body.AbilityBonus[(int)eProperty.StyleAbsorb] = 10;
+                Body.AbilityBonus[eProperty.Resist_Body] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Heat] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Cold] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Matter] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Energy] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Spirit] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Slash] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Crush] = min_value;
+                Body.AbilityBonus[eProperty.Resist_Thrust] = min_value;
+                Body.AbilityBonus[eProperty.MagicAbsorption] = 10;
+                Body.AbilityBonus[eProperty.PhysicalAbsorption] = 10;
+                Body.AbilityBonus[eProperty.StyleAbsorb] = 10;
             }
         }
-        protected override void CheckNPCAggro()
-        {
-            if (Body.attackComponent.AttackState)
-                return;
 
-            foreach (GameNPC npc in Body.GetNPCsInRadius((ushort)AggroRange))
-            {
-                if (!npc.IsAlive || npc.ObjectState != GameObject.eObjectState.Active)
-                    continue;
-
-                if (!GameServer.ServerRules.IsAllowedToAttack(Body, npc, true))
-                    continue;
-
-                if (AggroList.ContainsKey(npc))
-                    continue; // add only new NPCs
-
-                if (npc.Brain != null && npc.Brain is IControlledBrain)
-                {
-                    if (CanAggroTarget(npc))
-                    {
-                        AddToAggroList(npc, (npc.Level + 1) << 1);
-                    }
-                }
-            }
-        }
-        
         /// <summary>
         /// Called whenever Aros the Spiritmaster's body sends something to its brain.
         /// </summary>
@@ -205,28 +168,19 @@ namespace DOL.AI.Brain
         /// <returns>Whether or not a target was picked.</returns>
         public bool PickDebuffTarget()
         {
-            GameEpicAros aros = Body as GameEpicAros;
-
-            if (aros == null)
+            if (Body is not GameEpicAros aros)
                 return false;
 
-            ArrayList inRangeLiving = new ArrayList();
+            List<GameLiving> inRangeLivings = GameLoop.GetListForTick<GameLiving>();
 
-            foreach (var pair in AggroList)
+            foreach (GameLiving living in GetUnorderedAggroList())
             {
-                GameLiving living = pair.Key;
-
-                if (living != null &&
-                    living.IsAlive &&
-                    living.EffectList.GetOfType<NecromancerShadeEffect>() == null &&
-                    !aros.IsWithinRadius(living, aros.AttackRange))
-                {
-                    inRangeLiving.Add(living);
-                }
+                if (!aros.IsWithinRadius(living, aros.attackComponent.AttackRange))
+                    inRangeLivings.Add(living);
             }
 
-            if (inRangeLiving.Count > 0)
-                return aros.CheckDebuff((GameLiving)(inRangeLiving[Util.Random(1, inRangeLiving.Count) - 1]));
+            if (inRangeLivings.Count > 0)
+                return aros.CheckDebuff(inRangeLivings[Util.Random(0, inRangeLivings.Count - 1)]);
 
             return false;
         }

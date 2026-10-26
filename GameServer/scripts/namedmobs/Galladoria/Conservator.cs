@@ -9,7 +9,7 @@ namespace DOL.GS
 {
     public class Conservator : GameEpicBoss
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Conservator()
             : base()
@@ -57,29 +57,18 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }    
+    
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60159351);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Charisma = npcTemplate.Charisma;
-            Empathy = npcTemplate.Empathy;
-            ConservatorBrain.spampoison = false;
-            ConservatorBrain.spamaoe = false;
+
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
             ConservatorBrain sBrain = new ConservatorBrain();
+            sBrain.spampoison = false;
+            sBrain.spamaoe = false;
             SetOwnBrain(sBrain);
             LoadedFromScript = false; //load from database
             SaveIntoDatabase();
@@ -93,16 +82,7 @@ namespace DOL.GS
                 return 100000;
             }
         }
-        public override int AttackRange
-        {
-            get
-            {
-                return 450;
-            }
-            set
-            {
-            }
-        }
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == DOL.GS.Abilities.CCImmunity)
@@ -146,12 +126,10 @@ namespace DOL.GS
                 CO.BodyType = 5;
                 CO.MeleeDamageType = eDamageType.Slash;
                 CO.Faction = FactionMgr.GetFactionByID(96);
-                CO.Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
                 CO.X = 31297;
                 CO.Y = 41040;
                 CO.Z = 13473;
-                CO.MaxDistance = 2000;
                 CO.TetherRange = 2500;
                 CO.MaxSpeedBase = 300;
                 CO.Heading = 409;
@@ -173,7 +151,7 @@ namespace DOL.AI.Brain
 {
     public class ConservatorBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public ConservatorBrain()
             : base()
         {
@@ -182,7 +160,7 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -217,8 +195,8 @@ namespace DOL.AI.Brain
             }
             return 0;
         }
-        public static bool spampoison = false;
-        public static bool spamaoe = false;
+        public bool spampoison = false;
+        public bool spamaoe = false;
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -304,13 +282,12 @@ namespace DOL.AI.Brain
                     spell.Duration = 40;
                     spell.Frequency = 10; 
                     spell.SpellID = 11703;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "DamageOverTime";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
                     m_co_poison = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_co_poison);
                 }
                 return m_co_poison;
             }
@@ -333,13 +310,12 @@ namespace DOL.AI.Brain
                     spell.Range = 1800;
                     spell.Radius = 1200;
                     spell.SpellID = 11704;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.DirectDamageNoVariance.ToString();
                     spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_co_aoe = new Spell(spell, 70);                   
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_co_aoe);
                 }
                 return m_co_aoe;
             }

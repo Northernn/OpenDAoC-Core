@@ -52,7 +52,7 @@ namespace DOL.GS.Commands
 		)]
 	public class PlayerCommandHandler : AbstractCommandHandler, ICommandHandler
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public void OnCommand(GameClient client, string[] args)
         {
@@ -262,7 +262,6 @@ namespace DOL.GS.Commands
                             player.Out.SendUpdatePlayer();
                             player.Out.SendUpdatePoints();
                             player.Out.SendCharStatsUpdate();
-                            player.UpdatePlayerStatus();
                             player.SaveIntoDatabase();
                         }
 
@@ -422,7 +421,7 @@ namespace DOL.GS.Commands
 						player.MLLine = line;
 						player.SaveIntoDatabase();
 						player.RefreshSpecDependantSkills(true);
-						player.Out.SendUpdatePlayerSkills();
+						player.Out.SendUpdatePlayerSkills(true);
 						player.Out.SendUpdatePlayer();
 						player.Out.SendMasterLevelWindow((byte)player.MLLevel);
 						client.Out.SendMessage(player.Name + " Master Line is set to " + line + "!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
@@ -1099,7 +1098,7 @@ namespace DOL.GS.Commands
                         }
 
                         string name = string.Join(" ", args, 2, args.Length - 2);
-                        GamePlayer targetPlayer = ClientService.GetPlayerByPartialName(name, out ClientService.PlayerGuessResult result);;
+                        GamePlayer targetPlayer = ClientService.Instance.GetPlayerByPartialName(name, out ClientService.PlayerGuessResult result);;
 
                         if (targetPlayer != null && !GameServer.ServerRules.IsSameRealm(targetPlayer, player.Client.Player, true))
                             targetPlayer = null;
@@ -1221,16 +1220,6 @@ namespace DOL.GS.Commands
                                                            eChatType.CT_Important, eChatLoc.CL_SystemWindow);
                                     break;
                                 }
-                            case "dol":
-                                {
-                                    player.RespecAmountDOL += amount;
-                                    player.Client.Out.SendMessage(
-                                        client.Player.Name + "(PrivLevel: " + client.Account.PrivLevel + ") has awarded you " + amount +
-                                        " DOL (full) respec!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-                                    client.Out.SendMessage(amount + " DOL (full) respec given successfully to " + player.Name + "!",
-                                                           eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-                                    break;
-                                }
                             case "champion":
                                 {
                                     player.RespecAmountChampionSkill += amount;
@@ -1277,7 +1266,7 @@ namespace DOL.GS.Commands
 
                         m_hasEffect = false;
 
-                        lock (player.EffectList)
+                        lock (player.EffectList.Lock)
                         {
                             foreach (GameSpellEffect effect in player.EffectList)
                             {
@@ -1295,7 +1284,7 @@ namespace DOL.GS.Commands
                             return;
                         }
 
-                        lock (player.EffectList)
+                        lock (player.EffectList.Lock)
                         {
                             foreach (GameSpellEffect effect in player.EffectList)
                             {
@@ -1341,7 +1330,7 @@ namespace DOL.GS.Commands
                             {
                                 case "all":
                                 {
-                                    foreach (GamePlayer otherPlayer in ClientService.GetPlayers())
+                                    foreach (GamePlayer otherPlayer in ClientService.Instance.GetPlayers())
                                         otherPlayer.SaveIntoDatabase();
 
                                     client.Out.SendMessage("Saved all characters!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
@@ -1387,8 +1376,7 @@ namespace DOL.GS.Commands
                                 return;
                             }
                             player.Client.Out.SendPlayerQuit(true);
-                            player.Client.Player.SaveIntoDatabase();
-                            player.Client.Player.Quit(true);
+                            player.Client.Disconnect();
                             return;
                         }
 
@@ -1398,12 +1386,11 @@ namespace DOL.GS.Commands
                             {
                                 case "all":
                                     {
-                                        foreach (GamePlayer otherPlayer in ClientService.GetNonGmPlayers())
+                                        foreach (GamePlayer otherPlayer in ClientService.Instance.GetNonGmPlayers())
                                         {
                                             otherPlayer.Out.SendMessage($"{client.Player.Name} (PrivLevel: {client.Account.PrivLevel}) has kicked all players!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
                                             otherPlayer.Out.SendPlayerQuit(true);
-                                            otherPlayer.SaveIntoDatabase();
-                                            otherPlayer.Quit(true);
+                                            otherPlayer.Client.Disconnect();
                                             continue;
                                         }
                                     }
@@ -1450,7 +1437,6 @@ namespace DOL.GS.Commands
                                 client.Out.SendMessage($"You resurrected {player.Name} successfully!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
                                 player.StopReleaseTimer();
                                 player.Out.SendPlayerRevive(player);
-                                player.Out.SendStatusUpdate();
                                 player.Out.SendMessage($"You have been resurrected by {client.Player.GetName(0, false)}!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                                 player.Notify(GamePlayerEvent.Revive, player);
                             }
@@ -1467,7 +1453,7 @@ namespace DOL.GS.Commands
                             {
                                 case "albs":
                                     {
-                                        foreach (GamePlayer albPlayer in ClientService.GetPlayersOfRealm(eRealm.Albion))
+                                        foreach (GamePlayer albPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Albion))
                                         {
                                             if (!albPlayer.IsAlive)
                                             {
@@ -1477,7 +1463,6 @@ namespace DOL.GS.Commands
                                                 albPlayer.MoveTo(client.Player.CurrentRegionID, client.Player.X, client.Player.Y, client.Player.Z, client.Player.Heading);
                                                 albPlayer.StopReleaseTimer();
                                                 albPlayer.Out.SendPlayerRevive(albPlayer);
-                                                albPlayer.Out.SendStatusUpdate();
                                                 albPlayer.Out.SendMessage($"You have been resurrected by {client.Player.GetName(0, false)}!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                                                 albPlayer.Notify(GamePlayerEvent.Revive, albPlayer);
                                             }
@@ -1487,7 +1472,7 @@ namespace DOL.GS.Commands
 
                                 case "hibs":
                                     {
-                                        foreach (GamePlayer hibPlayer in ClientService.GetPlayersOfRealm(eRealm.Hibernia))
+                                        foreach (GamePlayer hibPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Hibernia))
                                         {
                                             if (!hibPlayer.IsAlive)
                                             {
@@ -1497,7 +1482,6 @@ namespace DOL.GS.Commands
                                                 hibPlayer.MoveTo(client.Player.CurrentRegionID, client.Player.X, client.Player.Y, client.Player.Z, client.Player.Heading);
                                                 hibPlayer.StopReleaseTimer();
                                                 hibPlayer.Out.SendPlayerRevive(hibPlayer);
-                                                hibPlayer.Out.SendStatusUpdate();
                                                 hibPlayer.Out.SendMessage($"You have been resurrected by {client.Player.GetName(0, false)}!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                                                 hibPlayer.Notify(GamePlayerEvent.Revive, hibPlayer);
                                             }
@@ -1506,7 +1490,7 @@ namespace DOL.GS.Commands
                                     break;
                                 case "mids":
                                     {
-                                        foreach (GamePlayer midPlayer in ClientService.GetPlayersOfRealm(eRealm.Midgard))
+                                        foreach (GamePlayer midPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Midgard))
                                         {
                                             if (!midPlayer.IsAlive)
                                             {
@@ -1516,7 +1500,6 @@ namespace DOL.GS.Commands
                                                 midPlayer.MoveTo(client.Player.CurrentRegionID, client.Player.X, client.Player.Y, client.Player.Z, client.Player.Heading);
                                                 midPlayer.StopReleaseTimer();
                                                 midPlayer.Out.SendPlayerRevive(midPlayer);
-                                                midPlayer.Out.SendStatusUpdate();
                                                 midPlayer.Out.SendMessage($"You have been resurrected by {client.Player.GetName(0, false)}!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                                                 midPlayer.Notify(GamePlayerEvent.Revive, midPlayer);
                                             }
@@ -1537,7 +1520,6 @@ namespace DOL.GS.Commands
                                             self.Out.SendMessage("You revive yourself.", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
                                             self.StopReleaseTimer();
                                             self.Out.SendPlayerRevive(self);
-                                            self.Out.SendStatusUpdate();
                                             self.Notify(GamePlayerEvent.Revive, self);
                                         }
                                         else
@@ -1550,7 +1532,7 @@ namespace DOL.GS.Commands
 
                                 case "all":
                                     {
-                                        foreach (GamePlayer otherPlayer in ClientService.GetPlayers<object>(Predicate, default))
+                                        foreach (GamePlayer otherPlayer in ClientService.Instance.GetPlayers<object>(Predicate, default))
                                         {
                                             otherPlayer.Health = otherPlayer.MaxHealth;
                                             otherPlayer.Mana = otherPlayer.MaxMana;
@@ -1558,7 +1540,6 @@ namespace DOL.GS.Commands
                                             otherPlayer.MoveTo(client.Player.CurrentRegionID, client.Player.X, client.Player.Y, client.Player.Z, client.Player.Heading);
                                             otherPlayer.StopReleaseTimer();
                                             otherPlayer.Out.SendPlayerRevive(otherPlayer);
-                                            otherPlayer.Out.SendStatusUpdate();
                                             otherPlayer.Out.SendMessage($"You have been resurrected by {client.Player.GetName(0, false)}!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                                             otherPlayer.Notify(GamePlayerEvent.Revive, otherPlayer);
                                         }
@@ -1623,7 +1604,7 @@ namespace DOL.GS.Commands
                         {
                             case "albs":
                                 {
-                                    foreach (GamePlayer albPlayer in ClientService.GetPlayersOfRealm(eRealm.Albion))
+                                    foreach (GamePlayer albPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Albion))
                                     {
                                         if (albPlayer.IsAlive && albPlayer.Client.Account.PrivLevel == 1)
                                             KillPlayer(client.Player, albPlayer);
@@ -1633,7 +1614,7 @@ namespace DOL.GS.Commands
 
                             case "mids":
                                 {
-                                    foreach (GamePlayer midPlayer in ClientService.GetPlayersOfRealm(eRealm.Midgard))
+                                    foreach (GamePlayer midPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Midgard))
                                     {
                                         if (midPlayer.IsAlive && midPlayer.Client.Account.PrivLevel == 1)
                                             KillPlayer(client.Player, midPlayer);
@@ -1643,7 +1624,7 @@ namespace DOL.GS.Commands
 
                             case "hibs":
                                 {
-                                    foreach (GamePlayer hibPlayer in ClientService.GetPlayersOfRealm(eRealm.Hibernia))
+                                    foreach (GamePlayer hibPlayer in ClientService.Instance.GetPlayersOfRealm(eRealm.Hibernia))
                                     {
                                         if (hibPlayer.IsAlive && hibPlayer.Client.Account.PrivLevel == 1)
                                             KillPlayer(client.Player, hibPlayer);
@@ -1670,7 +1651,7 @@ namespace DOL.GS.Commands
 
                             case "all":
                                 {
-                                    foreach (GamePlayer otherPlayer in ClientService.GetNonGmPlayers())
+                                    foreach (GamePlayer otherPlayer in ClientService.Instance.GetNonGmPlayers())
                                     {
                                         if (otherPlayer.IsAlive)
                                             KillPlayer(client.Player, otherPlayer);
@@ -1712,7 +1693,7 @@ namespace DOL.GS.Commands
 
                                     short count = 0;
                                     string guildName = string.Join(" ", args, 3, args.Length - 3);
-                                    List<GamePlayer> players = ClientService.GetPlayers(Predicate, guildName);
+                                    List<GamePlayer> players = ClientService.Instance.GetPlayers(Predicate, guildName);
 
                                     foreach (GamePlayer guildMember in players)
                                     {
@@ -1739,7 +1720,7 @@ namespace DOL.GS.Commands
 
                                     short count = 0;
                                     string name = args[3];
-                                    GamePlayer player = ClientService.GetPlayerByExactName(name);
+                                    GamePlayer player = ClientService.Instance.GetPlayerByExactName(name);
 
                                     if (player != null)
                                     {
@@ -1764,11 +1745,11 @@ namespace DOL.GS.Commands
 
                                     short count = 0;
                                     string name = args[3];
-                                    GamePlayer player = ClientService.GetPlayerByExactName(name);
+                                    GamePlayer player = ClientService.Instance.GetPlayerByExactName(name);
 
                                     if (player != null)
                                     {
-                                        ChatGroup cg = player.TempProperties.GetProperty<ChatGroup>(ChatGroup.CHATGROUP_PROPERTY, null);
+                                        ChatGroup cg = player.TempProperties.GetProperty<ChatGroup>(ChatGroup.CHATGROUP_PROPERTY);
 
                                         if (cg != null)
                                         {
@@ -1794,11 +1775,11 @@ namespace DOL.GS.Commands
 
                                     short count = 0;
                                     string name = args[3];
-                                    GamePlayer player = ClientService.GetPlayerByExactName(name);
+                                    GamePlayer player = ClientService.Instance.GetPlayerByExactName(name);
 
                                     if (player != null)
                                     {
-                                        BattleGroup bg = player.TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY, null);
+                                        BattleGroup bg = player.TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY);
 
                                         if (bg != null)
                                         {
@@ -2083,7 +2064,7 @@ namespace DOL.GS.Commands
                        GamePlayer targetPlayer;
 
                         if (args.Length > 2)
-                            targetPlayer = ClientService.GetPlayerByExactName(args[2]);
+                            targetPlayer = ClientService.Instance.GetPlayerByExactName(args[2]);
                         else
                             targetPlayer = client.Player.TargetObject as GamePlayer;
 
@@ -2235,7 +2216,7 @@ namespace DOL.GS.Commands
 			bool limitShown = false;
 
 
-			if (limitType == "" || limitType == "wear")
+			if (limitType == string.Empty || limitType == "wear")
 			{
 				limitShown = true;
 				text.Add("  ----- Wearing:");
@@ -2247,7 +2228,7 @@ namespace DOL.GS.Commands
 				text.Add(" ");
 			}
 
-			if (limitType == "" || limitType == "bag")
+			if (limitType == string.Empty || limitType == "bag")
 			{
 				limitShown = true;
 				text.Add("  ----- Backpack:");
@@ -2321,10 +2302,7 @@ namespace DOL.GS.Commands
 			text.Add("  - Guild : " + player.GuildName + " " + (player.GuildRank != null ? "Rank: " + player.GuildRank.RankLevel.ToString() : ""));
 			text.Add("  - XPs/RPs/BPs : " + player.Experience + " xp, " + player.RealmPoints + " rp, " + player.BountyPoints + " bp");
 
-            if (player.DamageRvRMemory > 0)
-                text.Add("  - Damage RvR Memory: " + player.DamageRvRMemory);
-			
-            if (player.Champion)
+			if (player.Champion)
 			{
 				text.Add("  - Champion :  CL " + player.ChampionLevel + ", " + player.ChampionExperience + " clxp");
 
@@ -2337,32 +2315,32 @@ namespace DOL.GS.Commands
 					}
 					else
 					{
-						activeBags = "";
+						activeBags = string.Empty;
 
 						if ((player.ActiveSaddleBags & (byte)eHorseSaddleBag.LeftFront) > 0)
 						{
-							if (activeBags != "")
+							if (activeBags != string.Empty)
 								activeBags += ", ";
 
 							activeBags += "LeftFront";
 						}
 						if ((player.ActiveSaddleBags & (byte)eHorseSaddleBag.RightFront) > 0)
 						{
-							if (activeBags != "")
+							if (activeBags != string.Empty)
 								activeBags += ", ";
 
 							activeBags += "RightFront";
 						}
 						if ((player.ActiveSaddleBags & (byte)eHorseSaddleBag.LeftRear) > 0)
 						{
-							if (activeBags != "")
+							if (activeBags != string.Empty)
 								activeBags += ", ";
 
 							activeBags += "LeftRear";
 						}
 						if ((player.ActiveSaddleBags & (byte)eHorseSaddleBag.RightRear) > 0)
 						{
-							if (activeBags != "")
+							if (activeBags != string.Empty)
 								activeBags += ", ";
 
 							activeBags += "RightRear";
@@ -2403,8 +2381,8 @@ namespace DOL.GS.Commands
 			text.Add(" ");
 			text.Add("CHARACTER STATS ");
 
-			String sCurrent = "";
-			String sTitle = "";
+			String sCurrent = string.Empty;
+			String sTitle = string.Empty;
 			int cnt = 0;
 
 			for (eProperty stat = eProperty.Stat_First; stat <= eProperty.Stat_Last; stat++, cnt++)
@@ -2414,14 +2392,14 @@ namespace DOL.GS.Commands
 				if (cnt == 3)
 				{
 					text.Add("  - Current stats " + sTitle + " : " + sCurrent);
-					sTitle = "";
-					sCurrent = "";
+					sTitle = string.Empty;
+					sCurrent = string.Empty;
 				}
 			}
 			text.Add("  - Current stats " + sTitle + " : " + sCurrent);
 
-			sCurrent = "";
-			sTitle = "";
+			sCurrent = string.Empty;
+			sTitle = string.Empty;
 			cnt = 0;
 			for (eProperty res = eProperty.Resist_First; res <= eProperty.Resist_Last; res++, cnt++)
 			{
@@ -2430,14 +2408,14 @@ namespace DOL.GS.Commands
 				if (cnt == 2)
 				{
 					text.Add("  - Current " + sTitle + " : " + sCurrent);
-					sCurrent = "";
-					sTitle = "";
+					sCurrent = string.Empty;
+					sTitle = string.Empty;
 				}
 				if (cnt == 5)
 				{
 					text.Add("  - Current " + sTitle + " : " + sCurrent);
-					sCurrent = "";
-					sTitle = "";
+					sCurrent = string.Empty;
+					sTitle = string.Empty;
 				}
 			}
 			text.Add("  - Current " + sTitle + " : " + sCurrent);
@@ -2447,11 +2425,10 @@ namespace DOL.GS.Commands
 					 player.GetModified(eProperty.ArmorAbsorption) + " ABS");
 			text.Add(" ");
 			text.Add("SPECCING INFORMATIONS ");
-			text.Add("  - Respecs availables : " + player.RespecAmountDOL + " dol, " + player.RespecAmountSingleSkill +
-					 " single, " + player.RespecAmountAllSkill + " full");
+			text.Add("  - Respecs availables : " + player.RespecAmountSingleSkill + " single, " + player.RespecAmountAllSkill + " full");
 			text.Add("  - Remaining spec. points : " + player.SkillSpecialtyPoints);
 			sTitle = "  - Player specialisations : ";
-			sCurrent = "";
+			sCurrent = string.Empty;
 			foreach (Specialization spec in player.GetSpecList())
 			{
 				sCurrent += spec.Name + " = " + spec.Level + " ; ";
@@ -2477,7 +2454,7 @@ namespace DOL.GS.Commands
             target.OnLevelUp(0);
 
             target.Out.SendUpdatePlayer();
-            target.Out.SendUpdatePlayerSkills();
+            target.Out.SendUpdatePlayerSkills(true);
             target.Out.SendUpdatePoints();
         }
 	}

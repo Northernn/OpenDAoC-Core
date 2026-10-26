@@ -16,9 +16,8 @@ namespace DOL.GS
         public override bool IsVisibleToPlayers => true;//this make dragon think all the time, no matter if player is around or not
         public override bool AddToWorld()
         {
-            EyesWatchingYouInitBrain.RandomTarget = null;
-            EyesWatchingYouInitBrain.Pick_randomly_Target = false;
             EyesWatchingYouInitBrain sbrain = new EyesWatchingYouInitBrain();
+            sbrain.RandomTarget = null;
             SetOwnBrain(sbrain);
             base.AddToWorld();
             return true;
@@ -47,7 +46,6 @@ namespace DOL.GS
                 CO.Flags ^= eFlags.DONTSHOWNAME;
                 CO.Flags ^= eFlags.PEACE;
                 CO.Faction = FactionMgr.GetFactionByID(64);
-                CO.Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
                 CO.X = 37278;
                 CO.Y = 63018;
                 CO.Z = 12706;
@@ -66,14 +64,13 @@ namespace DOL.AI.Brain
 {
     public class EyesWatchingYouInitBrain : APlayerVicinityBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public EyesWatchingYouInitBrain()
             : base()
         {
             ThinkInterval = 1000;
         }
-        public static List<GamePlayer> PlayersInGalla = new List<GamePlayer>();
-        public static bool Pick_randomly_Target = false;
+        public List<GamePlayer> PlayersInGalla = new List<GamePlayer>();
         private bool allowTimer = false;
         private int TimerDoStuff(ECSGameTimer timer)
         {
@@ -90,15 +87,15 @@ namespace DOL.AI.Brain
         {
             if (Body.IsAlive && Body.CurrentRegionID == 191)
             {
-                foreach (GamePlayer player in ClientService.GetPlayersOfRegion(Body.CurrentRegion))
+                foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(Body.CurrentRegion))
                 {
                     if (player.IsAlive && player.Client.Account.PrivLevel == 1 && !PlayersInGalla.Contains(player))
                         PlayersInGalla.Add(player);//add players to list from whole galladoria
                 }
             }
         }
-        public static GamePlayer randomtarget = null;
-        public static GamePlayer RandomTarget
+        public GamePlayer randomtarget = null;
+        public GamePlayer RandomTarget
         {
             get { return randomtarget; }
             set { randomtarget = value; }
@@ -123,7 +120,6 @@ namespace DOL.AI.Brain
                         mob.AddToWorld();
                     }
                     RandomTarget = null;
-                    Pick_randomly_Target = false;
                     if (PlayersInGalla.Count > 0)
                         PlayersInGalla.Clear();
                 }
@@ -138,11 +134,6 @@ namespace DOL.AI.Brain
                 new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(TimerDoStuff), Util.Random(25000, 45000));
                 allowTimer = true;
             }
-        }
-
-        public override void KillFSM()
-        {
-            
         }
     }
 }
@@ -168,7 +159,6 @@ namespace DOL.GS
             Flags ^= eFlags.CANTTARGET;
 
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
             BodyType = 8;
             Realm = eRealm.None;
             OlcasgeanEffectBrain adds = new OlcasgeanEffectBrain();
@@ -206,7 +196,7 @@ namespace DOL.AI.Brain
 {
     public class EyesWatchingYouEffectBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public EyesWatchingYouEffectBrain()
             : base()
         {

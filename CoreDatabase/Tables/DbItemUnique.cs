@@ -1,3 +1,4 @@
+using System;
 using DOL.Database.Attributes;
 
 namespace DOL.Database
@@ -7,15 +8,22 @@ namespace DOL.Database
 	{
 		public const string UNIQUE_SEPARATOR = "#";
 
-		public DbItemUnique()
-			: base()
+		public DbItemUnique() : base()
 		{
+			m_allowUpdate = true;
 			m_id_nb = "Unique_" + UniqueID.IdGenerator.GenerateID();
 			m_name = "(blank item)";
 		}
 
 		public DbItemUnique(DbItemTemplate template) : base()
 		{
+			ArgumentNullException.ThrowIfNull(template);
+
+			if (template.IsStackable)
+				throw new ArgumentException($"Cannot create unique template from '{template.Id_nb}' (MaxCount: {template.MaxCount}). Stackable items should never have unique templates.");
+
+			m_allowUpdate = true;
+
 			if (template is DbItemUnique)
 			{
 				m_id_nb = "Unique_" + UniqueID.IdGenerator.GenerateID();
@@ -24,6 +32,7 @@ namespace DOL.Database
 			{
 				m_id_nb = template.Id_nb + UNIQUE_SEPARATOR + UniqueID.IdGenerator.GenerateID();
 			}
+
 			Name = template.Name;
 			Bonus = template.Bonus;
 			Bonus1 = template.Bonus1;
@@ -97,11 +106,6 @@ namespace DOL.Database
 			PackageID = template.PackageID;
 			ClassType = template.ClassType;
 			SalvageYieldID = template.SalvageYieldID;
-		}
-	
-		public override bool Dirty {
-			get { return true; }
-			set { base.Dirty = true; }
 		}
 	}
 }

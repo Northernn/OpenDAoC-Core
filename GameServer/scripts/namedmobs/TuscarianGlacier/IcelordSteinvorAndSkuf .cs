@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -24,16 +23,9 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
 
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
 
         public override bool HasAbility(string keyName)
         {
@@ -55,10 +47,10 @@ namespace DOL.GS
         {
             get { return 100000; }
         }
-        public override void Die(GameObject killer) //on kill generate orbs
+        public override void ProcessDeath(GameObject killer) //on kill generate orbs
         {
             SpawnSeers();
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public void SpawnSeers()
         {
@@ -79,22 +71,9 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162350);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
-            SteinvorBrain.PlayerX = 0;
-            SteinvorBrain.PlayerY = 0;
-            SteinvorBrain.PlayerZ = 0;
-            SteinvorBrain.RandomTarget = null;
-            SteinvorBrain.PickedTarget = false;
 
             SteinvorBrain sbrain = new SteinvorBrain();
             SetOwnBrain(sbrain);
@@ -126,7 +105,6 @@ namespace DOL.GS
                     ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL *
                     60000; //1min is 60000 miliseconds
                 TG.Faction = FactionMgr.GetFactionByID(140);
-                TG.Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
                 TG.BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
 
                 TG.X = 25405;
@@ -149,8 +127,7 @@ namespace DOL.AI.Brain
 {
     public class SteinvorBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public SteinvorBrain()
             : base()
@@ -160,7 +137,7 @@ namespace DOL.AI.Brain
             ThinkInterval = 1500;
         }
 
-        public static bool IsPulled = false;
+        public bool IsPulled = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if (IsPulled == false)
@@ -228,28 +205,28 @@ namespace DOL.AI.Brain
             base.Think();
         }
 
-        public static GamePlayer randomtarget = null;
-        public static GamePlayer RandomTarget
+        public GamePlayer randomtarget = null;
+        public GamePlayer RandomTarget
         {
             get { return randomtarget; }
             set { randomtarget = value; }
         }
-        public static bool PickedTarget = false;
-        public static int PlayerX = 0;
-        public static int PlayerY = 0;
-        public static int PlayerZ = 0;
+        public bool PickedTarget = false;
+        public int PlayerX = 0;
+        public int PlayerY = 0;
+        public int PlayerZ = 0;
 
         public int PickPlayer(ECSGameTimer timer)
         {
             if (Body.IsAlive)
             {
-                List<GameLiving> enemies = AggroList.Keys.ToList();
+                List<GameLiving> enemies = GetUnorderedAggroList();
                 foreach (GamePlayer player in Body.GetPlayersInRadius(1100))
                 {
                     if (player != null)
                     {
                         if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-                            AggroList.TryAdd(player, new());
+                            AddToAggroList(player);
                     }
                 }
                 if (enemies.Count == 0)
@@ -290,7 +267,7 @@ namespace DOL.AI.Brain
 
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -357,16 +334,9 @@ namespace DOL.GS
             }
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
 
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
 
         public override bool HasAbility(string keyName)
         {
@@ -392,20 +362,11 @@ namespace DOL.GS
         {
             base.Die(killer);
         }
-        public static bool Spawn_Snakes = false;
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162349);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval =ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
 
@@ -439,7 +400,6 @@ namespace DOL.GS
                     ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL *
                     60000; //1min is 60000 miliseconds
                 TG.Faction = FactionMgr.GetFactionByID(140);
-                TG.Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
                 TG.BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
 
                 TG.X = 25405;
@@ -462,8 +422,7 @@ namespace DOL.AI.Brain
 {
     public class SkufBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public SkufBrain()
             : base()
@@ -472,7 +431,7 @@ namespace DOL.AI.Brain
             AggroRange = 600;
             ThinkInterval = 1500;
         }
-        public static bool IsPulled2 = false;
+        public bool IsPulled2 = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if (IsPulled2 == false)
@@ -521,6 +480,9 @@ namespace DOL.GS
 {
     public class HrimthursaSeer : GameEpicNPC
     {
+        private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+        private const int DESPAWN_RETRY_INTERVAL = 30000;
+
         public HrimthursaSeer() : base()
         {
         }
@@ -540,15 +502,8 @@ namespace DOL.GS
             return;
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 200;
@@ -573,24 +528,38 @@ namespace DOL.GS
             Model = 918;
             MeleeDamageType = eDamageType.Crush;
             Name = "hrimthursa seer";
-            MaxDistance = 3500;
             TetherRange = 3800;
             Size = 60;
             Level = (byte)Util.Random(73, 75);
             MaxSpeedBase = 270;
 
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
             Realm = eRealm.None;
             RespawnInterval = -1;
 
-            HrimthursaSeerBrain.walkto_point = false;
             HrimthursaSeerBrain adds = new HrimthursaSeerBrain();
             SetOwnBrain(adds);
             LoadedFromScript = false;
+
+            if (PackageID == "SteinvorDeathAdds")
+                new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
+
             base.AddToWorld();
             return true;
+        }
+
+        private int Despawn(ECSGameTimer timer)
+        {
+            if (!IsAlive)
+                return 0;
+
+            // Don't despawn mid fight.
+            if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+                return DESPAWN_RETRY_INTERVAL;
+
+            RemoveFromWorld();
+            return 0;
         }
     }
 }
@@ -599,8 +568,7 @@ namespace DOL.AI.Brain
 {
     public class HrimthursaSeerBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public HrimthursaSeerBrain()
             : base()
@@ -610,7 +578,7 @@ namespace DOL.AI.Brain
             ThinkInterval = 1000;
         }
 
-        public static bool walkto_point = false;
+        private bool _walkedToRoom = false;
         public void Walk_To_Room()
         {
             Point3D point1 = new Point3D();
@@ -622,10 +590,10 @@ namespace DOL.AI.Brain
             {
                 if (Body.CurrentRegionID == 160) //TG
                 {
-                    if (!Body.IsWithinRadius(point1, 30) && walkto_point == false)
-                        Body.WalkTo(point1, 100);
+                    if (!Body.IsWithinRadius(point1, 30) && _walkedToRoom == false)
+                        Body.PathTo(point1, 100);
                     else
-                        walkto_point = true;
+                        _walkedToRoom = true;
                 }
             }
         }
@@ -686,7 +654,6 @@ namespace DOL.GS
             Flags = GameNPC.eFlags.STATUE;
 
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             Realm = eRealm.None;
             RespawnInterval = -1;
 
@@ -719,13 +686,12 @@ namespace DOL.GS
                     spell.Radius = 350;
                     spell.Range = 1800;
                     spell.SpellID = 11747;
-                    spell.Target = "Area";
+                    spell.Target = eSpellTarget.AREA.ToString();
                     spell.Type = eSpellType.DirectDamageNoVariance.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_Icelord_Gtaoe = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_Gtaoe);
                 }
                 return m_Icelord_Gtaoe;
             }
@@ -737,30 +703,12 @@ namespace DOL.AI.Brain
 {
     public class EffectMobBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
         public EffectMobBrain()
             : base()
         {
-            AggroLevel = 0;
-            AggroRange = 0;
+            AggroLevel = 100;
+            AggroRange = 2500;
             ThinkInterval = 1500;
-        }
-        public override void Think()
-        {
-            if (Body.IsAlive)
-            {
-                foreach (GamePlayer player in Body.GetPlayersInRadius(2500))
-                {
-                    if (player != null)
-                    {
-                        if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-                            AggroList.TryAdd(player, new(100));
-                    }
-                }
-            }
-            base.Think();
         }
     }
 }

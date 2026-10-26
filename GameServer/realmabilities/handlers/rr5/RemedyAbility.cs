@@ -21,7 +21,6 @@
 using System.Reflection;
 using DOL.GS.PacketHandler;
 using DOL.GS.Effects;
-using log4net;
 using DOL.GS.Keeps;
 using DOL.GS.Spells;
 
@@ -39,7 +38,7 @@ namespace DOL.GS.SkillHandler
 		/// <param name="living"></param>
         public void Execute(Ability ab, GamePlayer player)
 		{
-            if (!player.IsAlive || player.IsSitting || player.IsMezzed || player.IsStunned)
+            if (player.IsSitting || player.IsIncapacitated)
                 return;
 
 			if (player != null)

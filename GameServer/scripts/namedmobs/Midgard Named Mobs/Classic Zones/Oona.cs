@@ -47,15 +47,8 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -85,13 +78,6 @@ namespace DOL.GS
 			}
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60164669);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_QUEST_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			OonaBrain sbrain = new OonaBrain();
@@ -102,14 +88,14 @@ namespace DOL.GS
         public override void StartAttack(GameObject target)
         {
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
 		{
 			foreach (GameNPC npc in GetNPCsInRadius(8000))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is OonaUndeadAddBrain)
 					npc.Die(this);
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
 		public void BroadcastMessage(String message)
 		{
@@ -166,7 +152,7 @@ namespace DOL.AI.Brain
 {
 	public class OonaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OonaBrain() : base()
 		{
 			AggroLevel = 100;
@@ -252,12 +238,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Aurora Blast";
 					spell.Range = 1650;
 					spell.SpellID = 12004;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();					
 					m_OonaDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OonaDD);
 				}
 				return m_OonaDD;
 			}
@@ -281,12 +266,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Bolt of Uncreation";
 					spell.Range = 1800;
 					spell.SpellID = 12005;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.Type = eSpellType.Bolt.ToString();
 					m_OonaBolt = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OonaBolt);
 				}
 				return m_OonaBolt;
 			}
@@ -304,13 +288,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60167424);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			OonaUndeadSoldierBrain sbrain = new OonaUndeadSoldierBrain();
 			SetOwnBrain(sbrain);
@@ -323,7 +300,7 @@ namespace DOL.AI.Brain
 {
 	public class OonaUndeadSoldierBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OonaUndeadSoldierBrain() : base()
 		{
 			AggroLevel = 100;
@@ -343,6 +320,9 @@ namespace DOL.GS
 {
 	public class OonaUndeadAdd: GameNPC
 	{
+		private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+		private const int DESPAWN_RETRY_INTERVAL = 30000;
+
 		public OonaUndeadAdd() : base() { }
 		public override bool AddToWorld()
 		{
@@ -355,8 +335,22 @@ namespace DOL.GS
 			SetOwnBrain(sbrain);
 			LoadedFromScript = true;
 			RespawnInterval = -1;
+			new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
 			base.AddToWorld();
 			return true;
+		}
+
+		private int Despawn(ECSGameTimer timer)
+		{
+			if (!IsAlive)
+				return 0;
+
+			// Don't despawn mid fight.
+			if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+				return DESPAWN_RETRY_INTERVAL;
+
+			RemoveFromWorld();
+			return 0;
 		}
 	}
 }
@@ -364,7 +358,7 @@ namespace DOL.AI.Brain
 {
 	public class OonaUndeadAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OonaUndeadAddBrain() : base()
 		{
 			AggroLevel = 100;

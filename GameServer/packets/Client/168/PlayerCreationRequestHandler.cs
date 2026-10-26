@@ -1,20 +1,17 @@
 using System.Reflection;
-using log4net;
+using DOL.Logging;
 
 namespace DOL.GS.PacketHandler.Client.v168
 {
     [PacketHandler(PacketHandlerType.TCP, eClientPackets.CreatePlayerRequest, "Handles requests for players(0x7C) in game", eClientStatus.PlayerInGame)]
-    public class PlayerCreationRequestHandler : IPacketHandler
+    public class PlayerCreationRequestHandler : PacketHandler
     {
-        /// <summary>
-        /// Defines a logger for this class.
-        /// </summary>
-        private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logger Log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        public void HandlePacket(GameClient client, GSPacketIn packet)
+        protected override void HandlePacketInternal(GameClient client, GSPacketIn packet)
         {
             ushort id = client.Version >= GameClient.eClientVersion.Version1126 ? packet.ReadShortLowEndian() : packet.ReadShort();
-            GameClient target = ClientService.GetClientFromId(id);
+            GameClient target = ClientService.Instance.GetClientBySessionId(id);
 
             if (target == null)
             {
@@ -26,7 +23,6 @@ namespace DOL.GS.PacketHandler.Client.v168
                 return;
             }
 
-            // DOLConsole.WriteLine("player creation request "+target.Player.Name);
             if (target.IsPlaying && target.Player != null && target.Player.ObjectState == GameObject.eObjectState.Active)
             {
                 client.Out.SendPlayerCreate(target.Player);

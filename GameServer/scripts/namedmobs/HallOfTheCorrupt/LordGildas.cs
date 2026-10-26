@@ -96,15 +96,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -116,15 +109,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(7719);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 
@@ -140,9 +125,6 @@ namespace DOL.GS
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 7, 0, 0);
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.Standard);
-            LordGildasBrain.Stage2 = false;
-            LordGildasBrain.CanWalk = false;
-            LordGildasBrain.Reset_Gildas = false;
             if (!Styles.Contains(taunt))
                 Styles.Add(taunt);
             if (!Styles.Contains(slam))
@@ -185,7 +167,6 @@ namespace DOL.GS
                 HOC.MeleeDamageType = eDamageType.Slash;
                 HOC.RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
                 HOC.Faction = FactionMgr.GetFactionByID(187);
-                HOC.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
                 HOC.X = 29015;
                 HOC.Y = 41910;
@@ -207,8 +188,7 @@ namespace DOL.AI.Brain
 {
     public class LordGildasBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LordGildasBrain()
             : base()
@@ -217,9 +197,9 @@ namespace DOL.AI.Brain
             AggroRange = 500;
             ThinkInterval = 500;
         }
-        public static bool CanWalk = false;
-        public static bool Stage2 = false;
-        public static bool Reset_Gildas = false;
+        public bool CanWalk = false;
+        public bool Stage2 = false;
+        public bool Reset_Gildas = false;
         public int ResetGildas(ECSGameTimer timer)
         {
             Reset_Gildas = false;
@@ -369,7 +349,6 @@ namespace DOL.AI.Brain
                     float angle = living.GetAngle(Body);
                     Point2D positionalPoint;
                     positionalPoint = living.GetPointFromHeading((ushort)(living.Heading + (180 * (4096.0 / 360.0))), 65);
-                    //Body.WalkTo(positionalPoint.X, positionalPoint.Y, living.Z, 280);
                     Body.X = positionalPoint.X;
                     Body.Y = positionalPoint.Y;
                     Body.Z = living.Z;

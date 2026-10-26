@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Numerics;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS;
+using OpenDAoC.Pathing;
+using static DOL.GS.Pathfinder;
 
 #region Epic Flame Mob
 namespace DOL.GS
@@ -27,15 +30,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -60,13 +56,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60160901);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_QUEST_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			FlameBrain sbrain = new FlameBrain();
@@ -100,10 +89,9 @@ namespace DOL.GS
 					spell.Name = "Flame Strike";
 					spell.Range = 500;
 					spell.SpellID = 11900;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_FlameDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_FlameDD);
 				}
 				return m_FlameDD;
 			}
@@ -114,7 +102,7 @@ namespace DOL.AI.Brain
 {
 	public class FlameBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public FlameBrain() : base()
 		{
 			AggroLevel = 0;//flame should be neutral
@@ -159,15 +147,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -192,13 +173,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60163498);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			LuriquayBrain sbrain = new LuriquayBrain();
 			SetOwnBrain(sbrain);
@@ -207,10 +181,10 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			SpawnFlame();
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
 		private void SpawnFlame()
         {
@@ -219,10 +193,21 @@ namespace DOL.GS
 				if (npc.Brain is FlameNormalBrain)
 					return;
 			}
+
+			Vector3 position = new(X, Y, Z);
+			Zone zone = CurrentZone;
+			bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+			EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+
+			// Pick a position on the navmesh whenever possible, so that Flame can't spawn inside walls.
+			Vector3 spawnPoint = usePathfinding ?
+				PathfindingProvider.Instance.GetRandomPoint(zone, position, 500, filters) ?? position :
+				new(X + Util.Random(-500, 500), Y + Util.Random(-500, 500), Z);
+
 			FlameNormal boss = new FlameNormal();
-			boss.X = X + Util.Random(-500, 500);
-			boss.Y = Y + Util.Random(-500, 500);
-			boss.Z = Z;
+			boss.X = (int) spawnPoint.X;
+			boss.Y = (int) spawnPoint.Y;
+			boss.Z = (int) spawnPoint.Z;
 			boss.Heading = Heading;
 			boss.CurrentRegion = CurrentRegion;
 			boss.AddToWorld();
@@ -233,7 +218,7 @@ namespace DOL.AI.Brain
 {
 	public class LuriquayBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public LuriquayBrain() : base()
 		{
 			AggroLevel = 100;
@@ -271,15 +256,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -335,16 +313,14 @@ namespace DOL.GS
 				RemoveFromWorld();
 			return 0;
 		}
-        public override void DropLoot(GameObject killer)
-        {
-        }
+        public override bool CanDropLoot => false;
     }
 }
 namespace DOL.AI.Brain
 {
 	public class FlameNormalBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public FlameNormalBrain() : base()
 		{
 			AggroLevel = 100;

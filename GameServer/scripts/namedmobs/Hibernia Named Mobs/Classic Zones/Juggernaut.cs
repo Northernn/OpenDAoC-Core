@@ -30,15 +30,8 @@ namespace DOL.GS
 				default: return 40;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -75,7 +68,6 @@ namespace DOL.GS
 			Level = 75;
 			Size = 200;
 			ParryChance = 50;
-			MaxDistance = 3500;
 			TetherRange = 3600;
 			if (!Styles.Contains(taunt))
 				Styles.Add(taunt);
@@ -107,7 +99,7 @@ namespace DOL.AI.Brain
 {
 	public class EpicJuggernautBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public EpicJuggernautBrain() : base()
 		{
 			AggroLevel = 100;
@@ -129,4 +121,3 @@ namespace DOL.AI.Brain
 		}
 	}
 }
-

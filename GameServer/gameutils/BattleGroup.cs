@@ -1,42 +1,35 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Threading;
+using DOL.Database;
 using DOL.GS.PacketHandler;
+using DOL.Language;
+using static DOL.GS.IGameStaticItemOwner;
+
 namespace DOL.GS
 {
 	/// <summary>
 	/// Battlegroups
 	/// </summary>
-	public class BattleGroup
+	public class BattleGroup : IGameStaticItemOwner
 	{
 		public const string BATTLEGROUP_PROPERTY="battlegroup";
+
+		public readonly Lock Lock = new();
+
 		/// <summary>
 		/// This holds all players inside the battlegroup
 		/// </summary>
 		protected HybridDictionary m_battlegroupMembers = new HybridDictionary();
-        protected GameLiving m_battlegroupLeader;
+		protected readonly Lock _battlegroupMembersLock = new();
+        protected GamePlayer m_battlegroupLeader;
         protected List<GamePlayer> m_battlegroupModerators = new List<GamePlayer>();
 
         protected Dictionary<GamePlayer, int> m_battlegroupRolls;
+        protected readonly Lock _battlegroupRolls = new();
         protected bool recordingRolls;
         protected int rollRecordThreshold;
 
@@ -85,7 +78,7 @@ namespace DOL.GS
 			set{ispublic = value;}
 		}
 
-		private string password="";
+		private string password=string.Empty;
 		public string Password
 		{
 			get{return password;}
@@ -101,7 +94,7 @@ namespace DOL.GS
 		public virtual bool AddBattlePlayer(GamePlayer player,bool leader) 
 		{
 			if (player == null) return false;
-			lock (m_battlegroupMembers)
+			lock (_battlegroupMembersLock)
 			{
 				if (m_battlegroupMembers.Contains(player))
 					return false;
@@ -120,7 +113,7 @@ namespace DOL.GS
 
         public virtual bool IsInTheBattleGroup(GamePlayer player)
         {
-            lock (m_battlegroupMembers) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+            lock (_battlegroupMembersLock)
             {
                 return m_battlegroupMembers.Contains(player);
             }
@@ -168,7 +161,7 @@ namespace DOL.GS
 		        return;
 	        if (roll > rollRecordThreshold)
 		        return;
-	        lock (m_battlegroupRolls)
+	        lock (_battlegroupRolls)
 	        {
 		        if(m_battlegroupRolls.ContainsKey(player))
 			        return;
@@ -218,11 +211,11 @@ namespace DOL.GS
             return m_battlegroupLeader;
         }
 
-        public bool SetBGLeader(GameLiving living)
+        public bool SetBGLeader(GamePlayer player)
         {
-            if (living != null)
+            if (player != null)
             {
-                m_battlegroupLeader = living;
+                m_battlegroupLeader = player;
                 return true;
             }
 
@@ -281,59 +274,76 @@ namespace DOL.GS
         public void SetBGLootType(bool type)
         {
             battlegroupLootType = type;
-            if (battlegroupLootType == false)
-            {
-                // Within bounds, continue
-            }
-            if (battlegroupLootType == true)
-            {
-                // Within bounds, continue
-            }
-            else
-            {
-                // Data has entered here that should not be, set to normal = 0
-                battlegroupLootType = false;
-            }
         }
 
-        public bool SetBGTreasurer(GamePlayer treasurer)
+        public void SetBGTreasurer(GamePlayer treasurer)
         {
             battlegroupTreasurer = treasurer;
-            if (battlegroupTreasurer == null)
-            {
-                // Do not set treasurer
-                return false;
-            }
-
-            if (battlegroupTreasurer != null)
-            {
-                // Good input, got a treasurer, continue
-                return true;
-            }
-            else
-            {
-                // Bad input, fix with null
-                battlegroupTreasurer = null;
-                return false;
-            }
-        }
-
-        public virtual void SendMessageToBattleGroupMembers(string msg, eChatType type, eChatLoc loc)
-        {
-            lock (m_battlegroupMembers) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
-            {
-                foreach (GamePlayer player in m_battlegroupMembers.Keys)
-                {
-                    player.Out.SendMessage(msg, type, loc);
-                }
-            }
+            battlegroupLootType = treasurer != null;
         }
 
         public int PlayerCount
         {
             get { return m_battlegroupMembers.Count; }
         }
-        /// <summary>
+
+		public string Name => $"{(Leader == null || PlayerCount <= 0 ? "leaderless" : $"{Leader.Name}'s")} battlegroup (size: {PlayerCount})";
+
+		public object GameStaticItemOwnerComparand => null;
+
+		public TryPickUpResult TryAutoPickUpMoney(GameMoney money)
+		{
+			return TryPickUpMoney(Leader as GamePlayer, money);
+		}
+
+		public TryPickUpResult TryAutoPickUpItem(WorldInventoryItem worldItem)
+		{
+			// We don't care if players have auto loot enabled, or if they can see the item (the item isn't added to the world yet anyway), or who attacked last, etc.
+			// This is especially important for battlegroups since they can have an illimited amount of players.
+			return TryPickUpItem(battlegroupTreasurer, worldItem);
+		}
+
+		public TryPickUpResult TryPickUpMoney(GamePlayer source, GameMoney money)
+		{
+			money.AssertLockAcquisition();
+
+			// Splitting money in a battlegroup could cause performance issues. Let it fallback to group then solo logic.
+			return TryPickUpResult.DoesNotWant;
+		}
+
+		public TryPickUpResult TryPickUpItem(GamePlayer source, WorldInventoryItem item)
+		{
+			item.AssertLockAcquisition();
+
+			// A battlegroup is only able to pick up items if it has a treasurer, otherwise it's supposed to fallback to group then solo logic.
+			// There is no range check. If you're in a BG, every item goes to the treasurer or stay on the ground.
+			// If his inventory is full, the item should simply stay on the ground until he makes some room, or another treasurer is appointed.
+			// Items discarded by players can only be picked up by those same players.
+			if (!GetBGLootType() || battlegroupTreasurer == null || item.IsPlayerDiscarded)
+				return TryPickUpResult.DoesNotWant;
+
+			if (!GiveItem(battlegroupTreasurer, item.Item))
+			{
+				battlegroupTreasurer.Out.SendMessage(LanguageMgr.GetTranslation(battlegroupTreasurer.Client.Account.Language, "GamePlayer.PickupObject.BackpackFull"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+				return TryPickUpResult.Blocked;
+			}
+
+			battlegroupTreasurer.Out.SendMessage(LanguageMgr.GetTranslation(battlegroupTreasurer.Client.Account.Language, "GamePlayer.PickupObject.YouGet", item.Item.GetName(1, false)), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+			Message.SystemToOthers(source, LanguageMgr.GetTranslation(battlegroupTreasurer.Client.Account.Language, "GamePlayer.PickupObject.GroupMemberPicksUp", Name, item.Item.GetName(1, false)), eChatType.CT_System);
+			InventoryLogging.LogInventoryAction("(ground)", battlegroupTreasurer, eInventoryActionType.Loot, item.Item.Template, item.Item.IsStackable ? item.Item.Count : 1);
+			item.RemoveFromWorld();
+			return TryPickUpResult.Success;
+
+			static bool GiveItem(GamePlayer player, DbInventoryItem item)
+			{
+				if (item.IsStackable)
+					return player.Inventory.AddTemplate(item, item.Count, eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
+
+				return player.Inventory.AddItem(eInventorySlot.FirstEmptyBackpack, item);
+			}
+		}
+
+		/// <summary>
 		/// Removes a player from the group
 		/// </summary>
 		/// <param name="player">GamePlayer to be removed</param>
@@ -341,7 +351,7 @@ namespace DOL.GS
 		public virtual bool RemoveBattlePlayer(GamePlayer player)
 		{
 			if (player == null) return false;
-			lock (m_battlegroupMembers)
+			lock (_battlegroupMembersLock)
 			{
 				if (!m_battlegroupMembers.Contains(player))
 					return false;
@@ -362,20 +372,18 @@ namespace DOL.GS
 					{
 						RemoveBattlePlayer(plr);
 					}
+					m_battlegroupLeader = null;
 				} else if (leader && m_battlegroupMembers.Count >= 2)
 				{
 					var bgPlayers = new ArrayList(m_battlegroupMembers.Count);
-					lock (bgPlayers)
+					bgPlayers.AddRange(m_battlegroupMembers.Keys);
+					var randomPlayer = bgPlayers[Util.Random(bgPlayers.Count - 1)] as GamePlayer;
+					if (randomPlayer == null) return false;
+					SetBGLeader(randomPlayer);
+					m_battlegroupMembers[randomPlayer] = true;
+					foreach(GamePlayer member in Members.Keys)
 					{
-						bgPlayers.AddRange(m_battlegroupMembers.Keys);
-						var randomPlayer = bgPlayers[Util.Random(bgPlayers.Count - 1)] as GamePlayer;
-						if (randomPlayer == null) return false;
-						SetBGLeader(randomPlayer);
-						m_battlegroupMembers[randomPlayer] = true;
-						foreach(GamePlayer member in Members.Keys)
-						{
-							member.Out.SendMessage(randomPlayer.Name + " is the new leader of the battle group.", eChatType.CT_BattleGroupLeader, eChatLoc.CL_SystemWindow);
-						}
+						member.Out.SendMessage(randomPlayer.Name + " is the new leader of the battle group.", eChatType.CT_BattleGroupLeader, eChatLoc.CL_SystemWindow);
 					}
 				}
 

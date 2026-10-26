@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -59,15 +52,7 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60164149);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			Faction = FactionMgr.GetFactionByID(96);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			MolluneroBrain sbrain = new MolluneroBrain();
@@ -77,14 +62,14 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
 		{
 			foreach (GameNPC npc in GetNPCsInRadius(2500))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is MolluneroAddBrain)
 					npc.RemoveFromWorld();
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
 		public override void OnAttackEnemy(AttackData ad) //on enemy actions
 		{
@@ -114,10 +99,9 @@ namespace DOL.GS
 					spell.Name = "Cold Blast";
 					spell.Range = 500;
 					spell.SpellID = 11909;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_MolluneroDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_MolluneroDD);
 				}
 				return m_MolluneroDD;
 			}
@@ -128,7 +112,7 @@ namespace DOL.AI.Brain
 {
 	public class MolluneroBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public MolluneroBrain() : base()
 		{
 			AggroLevel = 100;
@@ -200,10 +184,7 @@ namespace DOL.GS
 				default: return 15;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override int MaxHealth
 		{
 			get { return 2000; }
@@ -235,10 +216,8 @@ namespace DOL.GS
 			Size = (byte)Util.Random(35, 45);
 			RespawnInterval = -1;
 			RoamingRange = 200;
-			MaxDistance = 2500;
 			TetherRange = 2600;
 			Faction = FactionMgr.GetFactionByID(96);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
 			LoadedFromScript = true;
 			MolluneroAddBrain sbrain = new MolluneroAddBrain();
@@ -248,11 +227,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class MolluneroAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public MolluneroAddBrain() : base()
 		{
 			AggroLevel = 100;

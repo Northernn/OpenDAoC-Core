@@ -1,25 +1,28 @@
 ﻿using System;
 using DOL.Database;
 using DOL.GS.PacketHandler;
+using DOL.GS.ServerProperties;
 using DOL.Language;
 
 namespace DOL.GS
 {
     public class RangeAttackComponent
     {
-        private GameLiving m_owner;
+        private GameLiving _owner;
 
         public RangeAttackComponent(GameLiving owner)
         {
-            m_owner = owner;
+            _owner = owner;
         }
 
         public const int DEFAULT_ENDURANCE_COST = 5;
         public const int CRITICAL_SHOT_ENDURANCE_COST = 10;
         public const int VOLLEY_ENDURANCE_COST = 15;
+        public const double RAPID_FIRE_ATTACK_SPEED_MODIFIER = 0.5;
         public const int PROJECTILE_FLIGHT_SPEED = 1800; // 1800 units per second. Live value is unknown, but DoL had 1500. Also affects throwing weapons.
         public const int MAX_DRAW_DURATION = 15000;
-        public GameObject AutoFireTarget { get; set; } // Used to shoot at a different target than the one currently selected. Always null for NPCs.
+
+        public GameLiving AutoFireTarget { get; set; } // Used to shoot at a different target than the one currently selected. Always null for NPCs.
         public eRangedAttackState RangedAttackState { get; set; }
         public eRangedAttackType RangedAttackType { get; set; }
         public eActiveQuiverSlot ActiveQuiverSlot { get; set; }
@@ -27,52 +30,52 @@ namespace DOL.GS
         public DbInventoryItem Ammo { get; private set; }
         public bool IsAmmoCompatible { get; private set; }
 
-        private DbInventoryItem GetAmmoFromInventory(eObjectType ammoType)
-        {
-            switch (ActiveQuiverSlot)
-            {
-                case eActiveQuiverSlot.First:
-                    return m_owner.Inventory.GetItem(eInventorySlot.FirstQuiver);
-                case eActiveQuiverSlot.Second:
-                    return m_owner.Inventory.GetItem(eInventorySlot.SecondQuiver);
-                case eActiveQuiverSlot.Third:
-                    return m_owner.Inventory.GetItem(eInventorySlot.ThirdQuiver);
-                case eActiveQuiverSlot.Fourth:
-                    return m_owner.Inventory.GetItem(eInventorySlot.FourthQuiver);
-                case eActiveQuiverSlot.None:
-                    return m_owner.Inventory.GetFirstItemByObjectType((int)ammoType, eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
-            }
-
-            return null;
-        }
-
         public DbInventoryItem UpdateAmmo(DbInventoryItem weapon)
         {
             Ammo = null;
             IsAmmoCompatible = true;
 
-            if (m_owner is not GamePlayer || weapon == null)
+            if (_owner is not GamePlayer || weapon == null)
                 return null;
 
-            switch (weapon.Object_Type)
+            switch ((eObjectType) weapon.Object_Type)
             {
-                case (int)eObjectType.Thrown:
-                    Ammo = m_owner.Inventory.GetItem(eInventorySlot.DistanceWeapon);
+                case eObjectType.Thrown:
+                {
+                    Ammo = _owner.Inventory.GetItem(eInventorySlot.DistanceWeapon);
                     break;
-                case (int)eObjectType.Crossbow:
+                }
+                case eObjectType.Crossbow:
+                {
                     Ammo = GetAmmoFromInventory(eObjectType.Bolt);
-                    IsAmmoCompatible = Ammo?.Object_Type == (int)eObjectType.Bolt;
+                    IsAmmoCompatible = Ammo?.Object_Type == (int) eObjectType.Bolt;
                     break;
-                case (int)eObjectType.Longbow:
-                case (int)eObjectType.CompositeBow:
-                case (int)eObjectType.RecurvedBow:
-                case (int)eObjectType.Fired:
+                }
+                case eObjectType.Longbow:
+                case eObjectType.CompositeBow:
+                case eObjectType.RecurvedBow:
+                case eObjectType.Fired:
+                {
                     Ammo = GetAmmoFromInventory(eObjectType.Arrow);
-                    IsAmmoCompatible = Ammo?.Object_Type == (int)eObjectType.Arrow;
+                    IsAmmoCompatible = Ammo?.Object_Type == (int) eObjectType.Arrow;
                     break;
+                }
             }
 
             return Ammo;
+
+            DbInventoryItem GetAmmoFromInventory(eObjectType ammoType)
+            {
+                return ActiveQuiverSlot switch
+                {
+                    eActiveQuiverSlot.First => _owner.Inventory.GetItem(eInventorySlot.FirstQuiver),
+                    eActiveQuiverSlot.Second => _owner.Inventory.GetItem(eInventorySlot.SecondQuiver),
+                    eActiveQuiverSlot.Third => _owner.Inventory.GetItem(eInventorySlot.ThirdQuiver),
+                    eActiveQuiverSlot.Fourth => _owner.Inventory.GetItem(eInventorySlot.FourthQuiver),
+                    eActiveQuiverSlot.None => _owner.Inventory.GetFirstItemByObjectType((int) ammoType, eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack),
+                    _ => null,
+                };
+            }
         }
 
         /// <summary>
@@ -84,9 +87,10 @@ namespace DOL.GS
             if (AttackStartTime == 0)
                 AttackStartTime = GameLoop.GameLoopTime;
 
-            if (m_owner is GamePlayer playerOwner)
+            if (_owner is GamePlayer playerOwner)
             {
-                if ((GameLoop.GameLoopTime - AttackStartTime) > MAX_DRAW_DURATION && playerOwner.ActiveWeapon.Object_Type != (int)eObjectType.Crossbow)
+                if (GameLoop.GameLoopTime - AttackStartTime > MAX_DRAW_DURATION &&
+                    (eObjectType) playerOwner.ActiveWeapon.Object_Type is not eObjectType.Crossbow)
                 {
                     playerOwner.Out.SendMessage(LanguageMgr.GetTranslation(playerOwner.Client.Account.Language, "GamePlayer.Attack.TooTired"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
                     return eCheckRangeAttackStateResult.Stop;
@@ -117,13 +121,9 @@ namespace DOL.GS
                         playerOwner.Out.SendMessage(LanguageMgr.GetTranslation(playerOwner.Client.Account.Language, "GamePlayer.Attack.MustSelectQuiver"), eChatType.CT_YouHit, eChatLoc.CL_SystemWindow);
                     else if (!IsAmmoCompatible)
                         playerOwner.Out.SendMessage(LanguageMgr.GetTranslation(playerOwner.Client.Account.Language, "GamePlayer.Attack.CantUseQuiver"), eChatType.CT_YouHit, eChatLoc.CL_SystemWindow);
-                    else if (GameServer.ServerRules.IsAllowedToAttack(playerOwner, (GameLiving)target, false))
+                    else if (GameServer.ServerRules.IsAllowedToAttack(playerOwner, (GameLiving) target, false))
                     {
-                        if (target is GameLiving living &&
-                            RangedAttackType == eRangedAttackType.Critical &&
-                            (living.CurrentSpeed > 90 || // Walk speed == 85, hope that's what they mean.
-                            (living.attackComponent.AttackState && living.InCombat) || // Maybe not 100% correct.
-                            EffectListService.GetEffectOnTarget(living, eEffect.Mez) != null))
+                        if (target is GameLiving living && RangedAttackType is eRangedAttackType.Critical)
                         {
                             /*
                              * http://rothwellhome.org/guides/archery.htm
@@ -145,9 +145,13 @@ namespace DOL.GS
                              * delays) than against fast piercing/thrusting weapon wielders.
                              */
 
-                            // TODO: More checks?
-                            playerOwner.Out.SendMessage(LanguageMgr.GetTranslation(playerOwner.Client.Account.Language, "GamePlayer.Attack.CantCritical"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                            RangedAttackType = eRangedAttackType.Normal;
+                            if (living.attackComponent.weaponAction?.IsAttackRoundFinished == false ||
+                                living.CurrentSpeed > 90 ||
+                                living.effectListComponent.ContainsEffectForEffectType(eEffect.Mez))
+                            {
+                                playerOwner.Out.SendMessage(LanguageMgr.GetTranslation(playerOwner.Client.Account.Language, "GamePlayer.Attack.CantCritical"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                                RangedAttackType = eRangedAttackType.Normal;
+                            }
                         }
 
                         return eCheckRangeAttackStateResult.Fire;
@@ -157,7 +161,7 @@ namespace DOL.GS
                     return eCheckRangeAttackStateResult.Hold;
                 }
 
-                if (RangedAttackState == eRangedAttackState.Aim)
+                if (RangedAttackState is eRangedAttackState.Aim)
                 {
                     ECSGameEffect volley = EffectListService.GetEffectOnTarget(playerOwner, eEffect.Volley);//volley check to avoid spam
                     if (volley == null)
@@ -167,35 +171,30 @@ namespace DOL.GS
                         return eCheckRangeAttackStateResult.Hold;
                     }
                 }
-                else if (RangedAttackState == eRangedAttackState.ReadyToFire)
+                else if (RangedAttackState is eRangedAttackState.ReadyToFire)
                     return eCheckRangeAttackStateResult.Hold;
-
-                return eCheckRangeAttackStateResult.Fire;
             }
-            else
-            {
-                if (!m_owner.IsWithinRadius(target, m_owner.attackComponent.AttackRange))
-                    return eCheckRangeAttackStateResult.Stop;
+            else if (Properties.CHECK_RANGE_AT_NPC_RANGED_ATTACK_END && !_owner.IsWithinRadius(target, _owner.attackComponent.AttackRange))
+                return eCheckRangeAttackStateResult.Stop;
 
-                return eCheckRangeAttackStateResult.Fire;
-            }
+            return eCheckRangeAttackStateResult.Fire;
         }
 
         public void RemoveEnduranceAndAmmoOnShot()
         {
-            int arrowRecoveryChance = m_owner.GetModified(eProperty.ArrowRecovery);
+            int arrowRecoveryChance = _owner.GetModified(eProperty.ArrowRecovery);
 
             if (arrowRecoveryChance == 0 || Util.Chance(100 - arrowRecoveryChance))
-                m_owner.Inventory.RemoveCountFromStack(Ammo, 1);
+                _owner.Inventory.RemoveCountFromStack(Ammo, 1);
 
             if (RangedAttackType == eRangedAttackType.Critical)
-                m_owner.Endurance -= CRITICAL_SHOT_ENDURANCE_COST;
-            else if (RangedAttackType == eRangedAttackType.RapidFire && m_owner.GetAbilityLevel(Abilities.RapidFire) == 2)
-                m_owner.Endurance -= (int)Math.Ceiling(DEFAULT_ENDURANCE_COST / 2.0);
+                _owner.Endurance -= CRITICAL_SHOT_ENDURANCE_COST;
+            else if (RangedAttackType == eRangedAttackType.RapidFire && _owner.GetAbilityLevel(Abilities.RapidFire) == 2)
+                _owner.Endurance -= (int) Math.Ceiling(DEFAULT_ENDURANCE_COST / 2.0);
             else if (RangedAttackType == eRangedAttackType.Volley)
-                m_owner.Endurance -= VOLLEY_ENDURANCE_COST;
+                _owner.Endurance -= VOLLEY_ENDURANCE_COST;
             else
-                m_owner.Endurance -= DEFAULT_ENDURANCE_COST;
+                _owner.Endurance -= DEFAULT_ENDURANCE_COST;
         }
     }
 }

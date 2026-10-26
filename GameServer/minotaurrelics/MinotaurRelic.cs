@@ -12,7 +12,7 @@ namespace DOL.GS
 {
 	public class MinotaurRelic : GameStaticItem
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		#region constructor
 		public MinotaurRelic() : base() { m_saveInDB = true; }
@@ -27,7 +27,7 @@ namespace DOL.GS
 		#region Declarations
 		DbMinotaurRelic m_dbRelic;
 		Timer timer = null;
-		public AuxECSGameTimer respawntimer = null;
+		public ECSGameTimer respawntimer = null;
 		protected int m_spawny;
 		protected int m_spawnx;
 		protected int m_spawnz;
@@ -42,7 +42,7 @@ namespace DOL.GS
 		protected int m_relicID;
 		protected ISpellHandler m_spellHandler;
 		protected GameSpellEffect m_gameSpellEffect;
-		public IList<GamePlayer> Playerlist = new List<GamePlayer>();
+		public List<GamePlayer> Playerlist = new List<GamePlayer>();
         protected string m_protectorClassType;
         protected bool m_spawnLocked;
 
@@ -292,7 +292,7 @@ namespace DOL.GS
 		{
 			if (RelicSpell == null || m_spellHandler==null || m_gameSpellEffect==null) return;
 
-			IList<GamePlayer> newPlayerlist = new List<GamePlayer>();
+			List<GamePlayer> newPlayerlist = GameLoop.GetListForTick<GamePlayer>();
 
 			if (m_owner != null)
 			{
@@ -381,7 +381,9 @@ namespace DOL.GS
 							log.Error("Minotaur Relics : Effect Start : " + e);
 					}
 				}
-				Playerlist = newPlayerlist;
+
+				Playerlist.Clear();
+				Playerlist.AddRange(newPlayerlist);
 			}
 		}
 		protected void StopRelicEffect()
@@ -485,7 +487,7 @@ namespace DOL.GS
 				respawntimer.Stop();
 				respawntimer = null;
 			}
-			respawntimer = new AuxECSGameTimer(this, new AuxECSGameTimer.AuxECSTimerCallback(RespawnTimerCallback),
+			respawntimer = new ECSGameTimer(this, new ECSGameTimer.ECSTimerCallback(RespawnTimerCallback),
 			                               Util.Random(MinotaurRelicManager.MIN_RESPAWN_TIMER, MinotaurRelicManager.MAX_RESPAWN_TIMER));
 		}
 
@@ -494,7 +496,7 @@ namespace DOL.GS
 		/// </summary>
 		/// <param name="respawnTimer"></param>
 		/// <returns></returns>
-		protected override int RespawnTimerCallback(AuxECSGameTimer respawnTimer)
+		protected override int RespawnTimerCallback(ECSGameTimer respawnTimer)
 		{
 			if (respawntimer != null)
 			{
@@ -543,7 +545,7 @@ namespace DOL.GS
 			Z = living.Z;
 			Heading = living.Heading;
 
-			foreach (GamePlayer player in ClientService.GetPlayersOfRegion(CurrentRegion))
+			foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(CurrentRegion))
 			{
 				if (XP > 0)
 					player.Out.SendMinotaurRelicMapUpdate((byte)RelicID, CurrentRegionID, X, Y, Z);

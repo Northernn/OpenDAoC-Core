@@ -1,35 +1,16 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using log4net;
+using System.Threading;
 
 namespace DOL.GS
 {
     public class PropertyCollection
     {
-        private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger Log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private readonly ConcurrentDictionary<string, object> _properties = new();
+        private readonly Dictionary<string, object> _properties = new();
+        private readonly Lock _lock = new();
 
         public T GetProperty<T>(string key)
         {
@@ -43,7 +24,13 @@ namespace DOL.GS
 
         public T GetProperty<T>(string key, T @default, bool logged)
         {
-            bool exists = _properties.TryGetValue(key, out object value);
+            bool exists;
+            object value;
+
+            lock (_lock)
+            {
+                exists = _properties.TryGetValue(key, out value);
+            }
 
             if (!exists)
             {
@@ -66,30 +53,59 @@ namespace DOL.GS
 
         public void SetProperty(string key, object value)
         {
-            if (value == null)
-                _properties.TryRemove(key, out _);
-            else
-                _properties[key] = value;
+            lock (_lock)
+            {
+                if (value == null)
+                    _properties.Remove(key, out _);
+                else
+                    _properties[key] = value;
+            }
+        }
+
+        public bool TrySetProperty(string key, object value)
+        {
+            lock (_lock)
+            {
+                if (value == null)
+                {
+                    _properties.Remove(key, out _);
+                    return true;
+                }
+
+                return _properties.TryAdd(key, value);
+            }
         }
 
         public void RemoveProperty(string key)
         {
-            _properties.TryRemove(key, out _);
+            lock (_lock)
+            {
+                _properties.Remove(key, out _);
+            }
         }
 
-        public bool RemoveAndGetProperty(string key, out object value)
+        public bool TryRemoveProperty(string key, out object value)
         {
-            return _properties.TryRemove(key, out value);
+            lock (_lock)
+            {
+                return _properties.Remove(key, out value);
+            }
         }
 
         public List<string> GetAllProperties()
         {
-            return _properties.Keys.ToList();
+            lock (_lock)
+            {
+                return _properties.Keys.ToList();
+            }
         }
 
         public void RemoveAllProperties()
         {
-            _properties.Clear();
+            lock (_lock)
+            {
+                _properties.Clear();
+            }
         }
     }
 }

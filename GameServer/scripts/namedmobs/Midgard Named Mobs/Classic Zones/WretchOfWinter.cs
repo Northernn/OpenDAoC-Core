@@ -19,15 +19,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -108,7 +101,6 @@ namespace DOL.GS
 					spell.DamageType = (int)eDamageType.Body;
 					spell.Uninterruptible = true;
 					m_WoWPoison = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWPoison);
 				}
 				return m_WoWPoison;
 			}
@@ -119,7 +111,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterScorpBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterScorpBrain() : base()
 		{
 			AggroLevel = 100;
@@ -158,15 +150,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 150;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -247,7 +232,6 @@ namespace DOL.GS
 					spell.DamageType = (int)eDamageType.Body;
 					spell.Uninterruptible = true;
 					m_WoWPoison = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWPoison);
 				}
 				return m_WoWPoison;
 			}
@@ -258,7 +242,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterSpiderBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterSpiderBrain() : base()
 		{
 			AggroLevel = 100;
@@ -297,15 +281,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 70;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -386,7 +363,6 @@ namespace DOL.GS
 					spell.DamageType = (int)eDamageType.Body;
 					spell.Uninterruptible = true;
 					m_WoWPoison = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWPoison);
 				}
 				return m_WoWPoison;
 			}
@@ -397,7 +373,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterCrabBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterCrabBrain() : base()
 		{
 			AggroLevel = 100;
@@ -435,15 +411,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 40;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -513,10 +482,9 @@ namespace DOL.GS
 					spell.Name = "Frost Shock";
 					spell.Range = 500;
 					spell.SpellID = 11876;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_WoWDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWDD);
 				}
 				return m_WoWDD;
 			}
@@ -527,7 +495,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterJotunBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterJotunBrain() : base()
 		{
 			AggroLevel = 100;
@@ -566,15 +534,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 80;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -644,10 +605,9 @@ namespace DOL.GS
 					spell.Name = "Frost Shock";
 					spell.Range = 500;
 					spell.SpellID = 11957;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_WoWDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWDD);
 				}
 				return m_WoWDD;
 			}
@@ -658,7 +618,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterOgreBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterOgreBrain() : base()
 		{
 			AggroLevel = 100;
@@ -697,15 +657,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 60;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -775,10 +728,9 @@ namespace DOL.GS
 					spell.Name = "Frost Shock";
 					spell.Range = 500;
 					spell.SpellID = 11958;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_WoWDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWDD);
 				}
 				return m_WoWDD;
 			}
@@ -789,7 +741,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterIceBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterIceBrain() : base()
 		{
 			AggroLevel = 100;
@@ -828,15 +780,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 70;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -906,10 +851,9 @@ namespace DOL.GS
 					spell.Name = "Frost Shock";
 					spell.Range = 500;
 					spell.SpellID = 11958;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_WoWDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWDD);
 				}
 				return m_WoWDD;
 			}
@@ -920,7 +864,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterRaumarikBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterRaumarikBrain() : base()
 		{
 			AggroLevel = 100;
@@ -959,15 +903,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 80;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -1037,10 +974,9 @@ namespace DOL.GS
 					spell.Name = "Frost Shock";
 					spell.Range = 500;
 					spell.SpellID = 11877;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_WoWDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWDD);
 				}
 				return m_WoWDD;
 			}
@@ -1051,7 +987,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterLichBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterLichBrain() : base()
 		{
 			AggroLevel = 100;
@@ -1090,15 +1026,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 60;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -1180,7 +1109,6 @@ namespace DOL.GS
 					spell.DamageType = (int)eDamageType.Body;
 					spell.Uninterruptible = true;
 					m_WoWPoison = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_WoWPoison);
 				}
 				return m_WoWPoison;
 			}
@@ -1191,7 +1119,7 @@ namespace DOL.AI.Brain
 {
 	public class WrethOfWinterArachiteBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrethOfWinterArachiteBrain() : base()
 		{
 			AggroLevel = 100;

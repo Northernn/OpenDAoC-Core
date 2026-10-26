@@ -50,15 +50,8 @@ namespace DOL.GS
 			}
 			base.OnAttackEnemy(ad);
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -70,17 +63,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(83015);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(159);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(159));
 
 			HurjavelenBrain sbrain = new HurjavelenBrain();
 			SetOwnBrain(sbrain);
@@ -110,13 +95,12 @@ namespace DOL.GS
 					spell.Range = 600;
 					spell.Radius = 350;
 					spell.SpellID = 11816;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "DamageSpeedDecrease";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Matter;
 					m_HurjavelenDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_HurjavelenDD);
 				}
 				return m_HurjavelenDD;
 			}
@@ -127,14 +111,14 @@ namespace DOL.AI.Brain
 {
 	public class HurjavelenBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public HurjavelenBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsPulled = false;
+		public bool IsPulled = false;
 		public override void Think()
 		{
 			if (!CheckProximityAggro())
@@ -190,13 +174,12 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Duration = 120;
 					spell.SpellID = 11816;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "Disease";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
 					m_HurjavelenDisease = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_HurjavelenDisease);
 				}
 				return m_HurjavelenDisease;
 			}

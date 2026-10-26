@@ -1,22 +1,4 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
+using System.Collections.Generic;
 using DOL.Database;
 using DOL.GS.PacketHandler;
 using DOL.Language;
@@ -31,117 +13,42 @@ namespace DOL.GS
         private const int STAYS_OPEN_DURATION = 5000;
         private const int REPAIR_INTERVAL = 30 * 1000;
 
+        private static HashSet<int> _borderKeepDoorIds =
+        [
+            11020501, 11020502,
+            12000101, 12000102,
+            102093501, 102093502,
+            111161301, 111161302,
+            206016801, 206016802,
+            207156901, 207156902
+        ];
+
         private bool _openDead = false;
-        private eDoorState _state;
-        private object _lock = new();
-        private AuxECSGameTimer _closeDoorAction;
-        private AuxECSGameTimer _repairTimer;
+        private CloseDoorAction _closeDoorAction;
 
-        public int Locked { get; set; }
-        public override int DoorID { get; set; }
-        public override uint Flag { get; set; }
-        public override eDoorState State
-        {
-            get => _state;
-            set
-            {
-                if (_state != value)
-                {
-                    lock (_lock)
-                    {
-                        _state = value;
-
-                        foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
-                            player.Out.SendDoorState(CurrentRegion, this);
-                    }
-                }
-            }
-        }
+        public override bool CanBeOpenedViaInteraction => !Locked;
 
         public GameDoor() : base()
         {
-            _state = eDoorState.Closed;
             m_model = 0xFFFF;
-        }
-
-        public override void LoadFromDatabase(DataObject obj)
-        {
-            base.LoadFromDatabase(obj);
-
-            DbDoor dbDoor = obj as DbDoor;
-
-            if (dbDoor == null)
-                return;
-
-            Zone curZone = WorldMgr.GetZone((ushort) (dbDoor.InternalID / 1000000));
-
-            if (curZone == null)
-                return;
-
-            CurrentRegion = curZone.ZoneRegion;
-            m_name = dbDoor.Name;
-            _heading = (ushort) dbDoor.Heading;
-            m_x = dbDoor.X;
-            m_y = dbDoor.Y;
-            m_z = dbDoor.Z;
-            m_level = 0;
-            m_model = 0xFFFF;
-            DoorID = dbDoor.InternalID;
-            m_guildName = dbDoor.Guild;
-            Realm = (eRealm) dbDoor.Realm;
-            m_level = dbDoor.Level;
-            m_health = dbDoor.Health;
-            Locked = dbDoor.Locked;
-            Flag = dbDoor.Flags;
-
-            // Open mile gates on PVE and PVP server types.
-            if (CurrentRegion.IsFrontier && (GameServer.Instance.Configuration.ServerType is EGameServerType.GST_PvE or EGameServerType.GST_PvP))
-                State = eDoorState.Open;
-
-            AddToWorld();
-            StartHealthRegeneration();
-        }
-
-        public override void SaveIntoDatabase()
-        {
-            DbDoor obj = null;
-
-            if (InternalID != null)
-                obj = GameServer.Database.FindObjectByKey<DbDoor>(InternalID);
-
-            if (obj == null)
-                obj = new DbDoor();
-
-            obj.Name = Name;
-            obj.InternalID = DoorID;
-            obj.Type = DoorID / 100000000;
-            obj.Guild = GuildName;
-            obj.Flags = Flag;
-            obj.Realm = (byte) Realm;
-            obj.Level = Level;
-            obj.Health = Health;
-            obj.Locked = Locked;
-
-            if (InternalID == null)
-            {
-                GameServer.Database.AddObject(obj);
-                InternalID = obj.ObjectId;
-            }
-            else
-                GameServer.Database.SaveObject(obj);
         }
 
         public override void Open(GameLiving opener = null)
         {
-            if (Locked == 0)
+            if (!Locked)
                 State = eDoorState.Open;
 
             if (HealthPercent > 40 || !_openDead)
             {
-                lock (_lock)
+                lock (_stateLock)
                 {
-                    if (_closeDoorAction == null)
-                        _closeDoorAction = new CloseDoorAction(this);
+                    _closeDoorAction ??= new(this);
+
+                    // Don't extend the timer for border keep doors, otherwise players can block them.
+                    // The client doesn't send any interaction packet during the animation,
+                    // ensuring the door's state alternates between closed and open.
+                    if (IsBorderKeepDoor() && _closeDoorAction.IsAlive)
+                        return;
 
                     _closeDoorAction.Start(STAYS_OPEN_DURATION);
                 }
@@ -157,28 +64,18 @@ namespace DOL.GS
             _closeDoorAction = null;
         }
 
-        public override void NPCManipulateDoorRequest(GameNPC npc, bool open)
-        {
-            npc.TurnTo(X, Y);
-
-            if (open && _state != eDoorState.Open)
-                Open();
-            else if (!open && _state != eDoorState.Closed)
-                Close();
-        }
-
         public override int Health
         {
             get => m_health;
             set
             {
-                int maxhealth = MaxHealth;
+                int maxHealth = MaxHealth;
 
-                if (value >= maxhealth)
+                if (value >= maxHealth)
                 {
-                    m_health = maxhealth;
+                    m_health = maxHealth;
 
-                    lock (m_xpGainers.SyncRoot)
+                    lock (XpGainersLock)
                     {
                         m_xpGainers.Clear();
                     }
@@ -186,12 +83,12 @@ namespace DOL.GS
                 else
                     m_health = value > 0 ? value : 0;
 
-                if (IsAlive && m_health < maxhealth)
+                if (IsAlive && m_health < maxHealth)
                     StartHealthRegeneration();
+
+                UpdateCachedHealthPercent(maxHealth);
             }
         }
-
-        public override int MaxHealth => 5 * GetModified(eProperty.MaxHealth);
 
         public override void Die(GameObject killer)
         {
@@ -201,17 +98,18 @@ namespace DOL.GS
 
         public override void StartHealthRegeneration()
         {
-            if ((_repairTimer != null && _repairTimer.IsAlive) || Health >= MaxHealth)
+            if (m_healthRegenerationTimer.IsAlive || Health >= MaxHealth)
                 return;
 
-            _repairTimer = new AuxECSGameTimer(this);
-            _repairTimer.Callback = new AuxECSGameTimer.AuxECSTimerCallback(RepairTimerCallback);
-            _repairTimer.Start(REPAIR_INTERVAL);
+            m_healthRegenerationTimer.Start(REPAIR_INTERVAL);
         }
 
-        private int RepairTimerCallback(AuxECSGameTimer timer)
+        protected override int HealthRegenerationTimerCallback(ECSGameTimer timer)
         {
-            if (HealthPercent != 100 && !InCombat)
+            if (HealthPercent >= 100)
+                return 0;
+
+            if (!InCombat)
             {
                 Health += MaxHealth / 100 * 5;
 
@@ -224,9 +122,6 @@ namespace DOL.GS
                 // This should normally be done by 'DoorMgr'.
                 // But for now it's here because basic doors aren't attackable anyway.
                 SaveIntoDatabase();
-
-                if (HealthPercent >= 100)
-                    return 0;
             }
 
             return REPAIR_INTERVAL;
@@ -235,45 +130,62 @@ namespace DOL.GS
         public override void TakeDamage(GameObject source, eDamageType damageType, int damageAmount, int criticalAmount)
         {
             if (!_openDead && Realm != eRealm.Door)
-            {
                 base.TakeDamage(source, damageType, damageAmount, criticalAmount);
-            }
 
-            GamePlayer attackerPlayer = source as GamePlayer;
+            if (source is not GamePlayer attackerPlayer || _openDead || Realm is eRealm.Door)
+                return;
 
-            if (attackerPlayer != null)
+            attackerPlayer.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            Health -= damageAmount + criticalAmount;
+
+            if (IsAlive)
+                return;
+
+            attackerPlayer.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            Die(source);
+            _openDead = true;
+
+            if (!Locked)
+                Open();
+
+            Group attackerGroup = attackerPlayer.Group;
+
+            if (attackerGroup != null)
             {
-                if (!_openDead && Realm != eRealm.Door)
+                foreach (GameLiving living in attackerGroup.GetMembersInTheGroup())
+                    (living as GamePlayer)?.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            }
+        }
+
+        public override void LoadFromDatabase(DataObject obj)
+        {
+            base.LoadFromDatabase(obj);
+
+            if (State is eDoorState.Open)
+            {
+                lock (_stateLock)
                 {
-                    attackerPlayer.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                    Health -= damageAmount + criticalAmount;
-
-                    if (!IsAlive)
-                    {
-                        attackerPlayer.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                        Die(source);
-                        _openDead = true;
-
-                        if (Locked == 0)
-                            Open();
-
-                        Group attackerGroup = attackerPlayer.Group;
-
-                        if (attackerGroup != null)
-                        {
-                            foreach (GameLiving living in attackerGroup.GetMembersInTheGroup())
-                                ((GamePlayer) living)?.Out.SendMessage(LanguageMgr.GetTranslation(attackerPlayer.Client.Account.Language, "GameDoor.NowOpen", Name), eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                        }
-                    }
+                    _closeDoorAction ??= new(this);
+                    _closeDoorAction.Start(STAYS_OPEN_DURATION);
                 }
             }
         }
 
-        private class CloseDoorAction : AuxECSGameTimerWrapperBase
+        public bool IsBorderKeepDoor()
+        {
+            return IsBorderKeepDoor(DoorId);
+        }
+
+        public static bool IsBorderKeepDoor(int doorId)
+        {
+            return _borderKeepDoorIds.Contains(doorId);
+        }
+
+        private class CloseDoorAction : ECSGameTimerWrapperBase
         {
             public CloseDoorAction(GameDoor door) : base(door) { }
 
-            protected override int OnTick(AuxECSGameTimer timer)
+            protected override int OnTick(ECSGameTimer timer)
             {
                 GameDoor door = (GameDoor) timer.Owner;
                 door.Close();

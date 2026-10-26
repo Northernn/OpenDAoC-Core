@@ -107,15 +107,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 150;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (this.IsAlive && keyName == DOL.GS.Abilities.CCImmunity)
@@ -139,7 +132,6 @@ namespace DOL.GS
         public override bool AddToWorld()
         {
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 
             GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
@@ -175,7 +167,6 @@ namespace DOL.GS
             Quickness = 145;
             IsCloakHoodUp = true;
             EvadeChance = 50;
-            MaxDistance = 2000;
             TetherRange = 1500;
             MaxSpeedBase = 225;
             Gender = eGender.Female;
@@ -207,7 +198,6 @@ namespace DOL.GS
                 HOC.Size = 50;
                 HOC.CurrentRegionID = 277; //hall of the corrupt
                 HOC.Faction = FactionMgr.GetFactionByID(187);
-                HOC.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
                 HOC.Strength = 50;
                 HOC.Constitution = 100;
@@ -257,7 +247,6 @@ namespace DOL.GS
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Body;
                     m_Poison = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Poison);
                 }
 
                 return m_Poison;
@@ -270,8 +259,7 @@ namespace DOL.AI.Brain
 {
     public class LieutenantElvaBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LieutenantElvaBrain()
             : base()

@@ -20,13 +20,12 @@ using System;
 using System.Reflection;
 using DOL.Database;
 using DOL.Events;
-using log4net;
 
 namespace DOL.GS
 {
 	public class StealtherAbilities
 	{
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		[ScriptLoadedEvent]
 		public static void OnScriptCompiled(DOLEvent e, object sender, EventArgs args)
@@ -72,10 +71,9 @@ namespace DOL.GS
 					spell.Value = 25;
 					spell.Duration = 60;
 					spell.SpellID = 900090;
-					spell.Target = "Self";
+					spell.Target = eSpellTarget.SELF.ToString();
 					spell.Type = eSpellType.BloodRage.ToString();
 					Blood_Rage = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Reserved_Spells, Blood_Rage);
 				}
 				return Blood_Rage;
 			}
@@ -102,10 +100,9 @@ namespace DOL.GS
 					spell.Value = 25;
 					spell.Duration = 60;
 					spell.SpellID = 900091;
-					spell.Target = "Self";
+					spell.Target = eSpellTarget.SELF.ToString();
 					spell.Type = eSpellType.HeightenedAwareness.ToString();
 					Heightened_Awareness = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Reserved_Spells, Heightened_Awareness);
 				}
 				return Heightened_Awareness;
 			}
@@ -132,10 +129,9 @@ namespace DOL.GS
 					spell.Value = 25;
 					spell.Duration = 60;
 					spell.SpellID = 900092;
-					spell.Target = "Self";
+					spell.Target = eSpellTarget.SELF.ToString();
 					spell.Type = eSpellType.SubtleKills.ToString();
 					Subtle_Kills = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Reserved_Spells, Subtle_Kills);
 				}
 				return Subtle_Kills;
 			}

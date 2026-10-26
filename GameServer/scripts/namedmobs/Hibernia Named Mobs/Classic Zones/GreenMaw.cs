@@ -1,8 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Threading;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS;
+using OpenDAoC.Pathing;
+using static DOL.GS.Pathfinder;
 
 namespace DOL.GS
 {
@@ -26,15 +31,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -79,15 +77,6 @@ namespace DOL.GS
 			}
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(50022);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
-			GreenMawAdd.GreenMawRedCount = 0;
-			GreenMawAdd2.GreenMawOrangeCount = 0;
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_QUEST_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			GreenMawBrain sbrain = new GreenMawBrain();
@@ -97,23 +86,67 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
 		{
 			SpawnCopies();
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
 		private void SpawnCopies()
 		{
+			Vector3 position = new(X, Y, Z);
+			Zone zone = CurrentZone;
+			bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+			EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+			GreenMawWave wave = new();
+
 			for (int i = 0; i < 3; i++)
 			{
+				// Pick positions on the navmesh whenever possible, so that copies can't spawn inside walls.
+				Vector3 spawnPoint = usePathfinding ?
+					PathfindingProvider.Instance.GetRandomPoint(zone, position, 50, filters) ?? position :
+					new(X + Util.Random(-50, 50), Y + Util.Random(-50, 50), Z);
+
 				GreenMawAdd npc = new GreenMawAdd();
-				npc.X = X + Util.Random(-50, 50);
-				npc.Y = Y + Util.Random(-50, 50);
-				npc.Z = Z;
+				npc.X = (int) spawnPoint.X;
+				npc.Y = (int) spawnPoint.Y;
+				npc.Z = (int) spawnPoint.Z;
 				npc.Heading = Heading;
 				npc.CurrentRegion = CurrentRegion;
+				npc.Wave = wave;
+				wave.Add(npc);
 				npc.AddToWorld();
 			}
+		}
+	}
+
+	public class GreenMawWave
+	{
+		private readonly List<GameNPC> _members = new();
+		private int _nextWaveTriggered;
+
+		public void Add(GameNPC npc)
+		{
+			lock (_members)
+				_members.Add(npc);
+		}
+
+		public void Remove(GameNPC npc)
+		{
+			lock (_members)
+				_members.Remove(npc);
+		}
+
+		public bool RemoveAndCheckLastAlive(GameNPC npc)
+		{
+			lock (_members)
+			{
+				_members.Remove(npc);
+
+				if (_members.Count > 0)
+					return false;
+			}
+
+			return Interlocked.Exchange(ref _nextWaveTriggered, 1) == 0;
 		}
 	}
 }
@@ -121,7 +154,7 @@ namespace DOL.AI.Brain
 {
 	public class GreenMawBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public GreenMawBrain() : base()
 		{
 			AggroLevel = 100;
@@ -147,7 +180,11 @@ namespace DOL.GS
 {
 	public class GreenMawAdd : GameNPC
 	{
+		private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+		private const int DESPAWN_RETRY_INTERVAL = 30000;
+
 		public GreenMawAdd() : base() { }
+		public GreenMawWave Wave;
 		public override int GetResist(eDamageType damageType)
 		{
 			switch (damageType)
@@ -158,15 +195,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 250;
@@ -195,30 +225,55 @@ namespace DOL.GS
 			SetOwnBrain(sbrain);
 			LoadedFromScript = true;
 			RespawnInterval = -1;
+			new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
 			base.AddToWorld();
 			return true;
 		}
-		public static int GreenMawRedCount = 0;
-        public override void Die(GameObject killer)
-        {
-			++GreenMawRedCount;
-			if (GreenMawRedCount >= 3)
-				SpawnCopies();
-			base.Die(killer);
-        }
-		public override void DropLoot(GameObject killer) //no loot
+
+		private int Despawn(ECSGameTimer timer)
 		{
+			if (!IsAlive)
+				return 0;
+
+			// Don't despawn mid fight.
+			if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+				return DESPAWN_RETRY_INTERVAL;
+
+			Wave?.Remove(this);
+			RemoveFromWorld();
+			return 0;
 		}
+
+        public override void ProcessDeath(GameObject killer)
+        {
+			if (Wave != null && Wave.RemoveAndCheckLastAlive(this))
+				SpawnCopies();
+			base.ProcessDeath(killer);
+        }
+		public override bool CanDropLoot => false;
 		private void SpawnCopies()
 		{
+			Vector3 position = new(X, Y, Z);
+			Zone zone = CurrentZone;
+			bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+			EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+			GreenMawWave wave = new();
+
 			for (int i = 0; i < 4; i++)
 			{
+				// Pick positions on the navmesh whenever possible, so that copies can't spawn inside walls.
+				Vector3 spawnPoint = usePathfinding ?
+					PathfindingProvider.Instance.GetRandomPoint(zone, position, 50, filters) ?? position :
+					new(X + Util.Random(-50, 50), Y + Util.Random(-50, 50), Z);
+
 				GreenMawAdd2 npc = new GreenMawAdd2();
-				npc.X = X + Util.Random(-50, 50);
-				npc.Y = Y + Util.Random(-50, 50);
-				npc.Z = Z;
+				npc.X = (int) spawnPoint.X;
+				npc.Y = (int) spawnPoint.Y;
+				npc.Z = (int) spawnPoint.Z;
 				npc.Heading = Heading;
 				npc.CurrentRegion = CurrentRegion;
+				npc.Wave = wave;
+				wave.Add(npc);
 				npc.AddToWorld();
 			}
 		}
@@ -228,7 +283,7 @@ namespace DOL.AI.Brain
 {
 	public class GreenMawAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public GreenMawAddBrain() : base()
 		{
 			AggroLevel = 100;
@@ -248,6 +303,9 @@ namespace DOL.GS
 {
 	public class GreenMawAdd2 : GameNPC
 	{
+		private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+		private const int DESPAWN_RETRY_INTERVAL = 30000;
+
 		public GreenMawAdd2() : base() { }
 		public override int GetResist(eDamageType damageType)
 		{
@@ -259,15 +317,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -286,6 +337,7 @@ namespace DOL.GS
 		public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
 		public override short Strength { get => base.Strength; set => base.Strength = 150; }
 		#endregion
+		public GreenMawWave Wave;
 		public override bool AddToWorld()
 		{
 			Name = "Part of Green Maw";
@@ -296,28 +348,50 @@ namespace DOL.GS
 			SetOwnBrain(sbrain);
 			LoadedFromScript = true;
 			RespawnInterval = -1;
+			new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
 			base.AddToWorld();
 			return true;
 		}
-		public static int GreenMawOrangeCount = 0;
-		public override void Die(GameObject killer)
+
+		private int Despawn(ECSGameTimer timer)
 		{
-			++GreenMawOrangeCount;
-			if (GreenMawOrangeCount >= 4)
+			if (!IsAlive)
+				return 0;
+
+			// Don't despawn mid fight.
+			if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+				return DESPAWN_RETRY_INTERVAL;
+
+			Wave?.Remove(this);
+			RemoveFromWorld();
+			return 0;
+		}
+
+		public override void ProcessDeath(GameObject killer)
+		{
+			if (Wave != null && Wave.RemoveAndCheckLastAlive(this))
 				SpawnCopies();
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
-		public override void DropLoot(GameObject killer) //no loot
-		{
-		}
+		public override bool CanDropLoot => false;
 		private void SpawnCopies()
 		{
+			Vector3 position = new(X, Y, Z);
+			Zone zone = CurrentZone;
+			bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+			EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+
 			for (int i = 0; i < 2; i++)
 			{
+				// Pick positions on the navmesh whenever possible, so that copies can't spawn inside walls.
+				Vector3 spawnPoint = usePathfinding ?
+					PathfindingProvider.Instance.GetRandomPoint(zone, position, 50, filters) ?? position :
+					new(X + Util.Random(-50, 50), Y + Util.Random(-50, 50), Z);
+
 				GreenMawAdd3 npc = new GreenMawAdd3();
-				npc.X = X + Util.Random(-50, 50);
-				npc.Y = Y + Util.Random(-50, 50);
-				npc.Z = Z;
+				npc.X = (int) spawnPoint.X;
+				npc.Y = (int) spawnPoint.Y;
+				npc.Z = (int) spawnPoint.Z;
 				npc.Heading = Heading;
 				npc.CurrentRegion = CurrentRegion;
 				npc.AddToWorld();
@@ -329,7 +403,7 @@ namespace DOL.AI.Brain
 {
 	public class GreenMawAdd2Brain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public GreenMawAdd2Brain() : base()
 		{
 			AggroLevel = 100;
@@ -349,6 +423,9 @@ namespace DOL.GS
 {
 	public class GreenMawAdd3 : GameNPC
 	{
+		private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+		private const int DESPAWN_RETRY_INTERVAL = 30000;
+
 		public GreenMawAdd3() : base() { }
 		public override int GetResist(eDamageType damageType)
 		{
@@ -360,15 +437,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 
 		public override double GetArmorAF(eArmorSlot slot)
 		{
@@ -398,19 +468,32 @@ namespace DOL.GS
 			SetOwnBrain(sbrain);
 			LoadedFromScript = true;
 			RespawnInterval = -1;
+			new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
 			base.AddToWorld();
 			return true;
 		}
-		public override void DropLoot(GameObject killer) //no loot
+
+		private int Despawn(ECSGameTimer timer)
 		{
+			if (!IsAlive)
+				return 0;
+
+			// Don't despawn mid fight.
+			if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+				return DESPAWN_RETRY_INTERVAL;
+
+			RemoveFromWorld();
+			return 0;
 		}
+
+		public override bool CanDropLoot => false;
 	}
 }
 namespace DOL.AI.Brain
 {
 	public class GreenMawAdd3Brain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public GreenMawAdd3Brain() : base()
 		{
 			AggroLevel = 100;

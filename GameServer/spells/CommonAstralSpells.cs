@@ -1,23 +1,4 @@
-﻿/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
@@ -30,7 +11,7 @@ namespace DOL.GS.Spells
     /// <summary>
     /// Dex/Qui/Str/Con stat specline debuff and transfers them to the caster.
     /// </summary>
-    [SpellHandlerAttribute("DexStrConQuiTap")]
+    [SpellHandler(eSpellType.DexStrConQuiTap)]
     public class DexStrConQuiTap : SpellHandler
     {
         private IList<eProperty> m_stats;
@@ -55,16 +36,16 @@ namespace DOL.GS.Spells
             base.OnEffectStart(effect);
             foreach (eProperty property in Stats)
             {
-                m_caster.BaseBuffBonusCategory[(int)property] += (int)m_spell.Value;
-                Target.DebuffCategory[(int)property] -= (int)m_spell.Value;
+                m_caster.BaseBuffBonusCategory[property] += (int)m_spell.Value;
+                Target.DebuffCategory[property] -= (int)m_spell.Value;
             }
         }
         public override int OnEffectExpires(GameSpellEffect effect, bool noMessages)
         {
             foreach (eProperty property in Stats)
             {
-                Target.DebuffCategory[(int)property] += (int)m_spell.Value;
-                m_caster.BaseBuffBonusCategory[(int)property] -= (int)m_spell.Value;
+                Target.DebuffCategory[property] += (int)m_spell.Value;
+                m_caster.BaseBuffBonusCategory[property] -= (int)m_spell.Value;
             }
             return base.OnEffectExpires(effect, noMessages);
         }
@@ -73,7 +54,7 @@ namespace DOL.GS.Spells
     /// <summary>
     /// A proc to lower target's ArmorFactor and ArmorAbsorption.
     /// </summary>
-    [SpellHandlerAttribute("ArmorReducingEffectiveness")]
+    [SpellHandler(eSpellType.ArmorReducingEffectiveness)]
     public class ArmorReducingEffectiveness : DualStatDebuff
     {
         public override eProperty Property1 { get { return eProperty.ArmorFactor; } }
@@ -84,10 +65,10 @@ namespace DOL.GS.Spells
     /// <summary>
     /// Summons a Elemental that only follows the caster.
     /// </summary>
-    [SpellHandler("SummonHealingElemental")]
+    [SpellHandler(eSpellType.SummonHealingElemental)]
     public class SummonHealingElemental : MasterlevelHandling
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         GameNPC summoned = null;
         GameSpellEffect beffect = null;
@@ -112,7 +93,7 @@ namespace DOL.GS.Spells
             }
 
             Point2D summonloc;
-            beffect = CreateSpellEffect(target, Effectiveness);
+            beffect = CreateSpellEffect(target, CasterEffectiveness);
             {
                 summonloc = target.GetPointFromHeading(target.Heading, 64);
 
@@ -126,7 +107,6 @@ namespace DOL.GS.Spells
                 summoned.CurrentRegion = target.CurrentRegion;
                 summoned.Heading = (ushort)((target.Heading + 2048) % 4096);
                 summoned.Realm = target.Realm;
-                summoned.CurrentSpeed = 0;
                 summoned.Level = Caster.Level;
                 summoned.Size = 50;
                 summoned.AddToWorld();
@@ -156,7 +136,7 @@ namespace DOL.GS.Spells
     /// <summary>
     /// Summons a Elemental that follows the target and attacks the target.
     /// </summary>
-    [SpellHandler("SummonElemental")]
+    [SpellHandler(eSpellType.SummonElemental)]
     public class SummonElemental : SummonSpellHandler
     {
         private ISpellHandler _trap;
@@ -168,8 +148,7 @@ namespace DOL.GS.Spells
             ProcPetBrain petBrain = (ProcPetBrain)m_pet.Brain;
             m_pet.Level = Caster.Level;
             m_pet.Strength = 0;
-            petBrain.AddToAggroList(target, 1);
-            petBrain.Think();
+            petBrain.AddToAggroList(target);
         }
 
         protected override GameSummonedPet GetGamePet(INpcTemplate template) { return new SummonElementalPet(template); }
@@ -200,7 +179,7 @@ namespace DOL.GS.Spells
             dbs.Icon = 4107;
             dbs.ClientEffect = 5435;
             dbs.DamageType = 15;
-            dbs.Target = "Enemy";
+            dbs.Target = eSpellTarget.ENEMY.ToString();
             dbs.Radius = 0;
             dbs.Type = eSpellType.DirectDamage.ToString();
             dbs.Damage = 80;

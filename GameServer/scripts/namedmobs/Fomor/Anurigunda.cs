@@ -40,11 +40,7 @@ namespace DOL.GS
 		{
 			get { return 30000; }
 		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -52,7 +48,7 @@ namespace DOL.GS
 
 			return base.HasAbility(keyName);
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(CurrentRegionID))
 			{
@@ -64,24 +60,16 @@ namespace DOL.GS
 					}
 				}
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
         public override bool AddToWorld()
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60157942);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			Level = Convert.ToByte(npcTemplate.Level);
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(82);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(82));
 
 			AnurigundaBrain sbrain = new AnurigundaBrain();
 			SetOwnBrain(sbrain);
@@ -96,14 +84,14 @@ namespace DOL.AI.Brain
 {
 	public class AnurigundaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public AnurigundaBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsPulled = false;
+		public bool IsPulled = false;
 		private bool RemoveAdds = false;
 		public void BlockEntrance()
         {
@@ -174,8 +162,8 @@ namespace DOL.AI.Brain
 			}
 			base.Think();
 		}
-		public static bool Adds1 = false;
-		public static bool Adds2 = false;
+		public bool Adds1 = false;
+		public bool Adds2 = false;
 		public void SpawnFomorians()
         {
 			if (Body.HealthPercent <= 40 && Adds1 == false)
@@ -235,13 +223,12 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Radius = 350;
 					spell.SpellID = 11839;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DamageOverTime.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Heat;
 					m_FireGroundDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_FireGroundDD);
 				}
 				return m_FireGroundDD;
 			}
@@ -296,10 +283,7 @@ namespace DOL.GS
 				default: return 25;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 70;
-		}
+
 		List<int> Id_npctemplates = new List<int>()
 		{
 			60160948,60160946,60160979,60161009
@@ -310,17 +294,9 @@ namespace DOL.GS
 			int idtemplate = Id_npctemplates[Util.Random(0, Id_npctemplates.Count - 1)];
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(idtemplate);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = -1;
 
 			Faction = FactionMgr.GetFactionByID(82);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(82));
 			AnurigundaAddsBrain adds = new AnurigundaAddsBrain();
 			SetOwnBrain(adds);
 			base.AddToWorld();

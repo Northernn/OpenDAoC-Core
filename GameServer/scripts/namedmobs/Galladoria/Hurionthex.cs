@@ -1,13 +1,9 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using DOL.AI.Brain;
-using DOL.Events;
 using DOL.Database;
+using DOL.Events;
 using DOL.GS;
 using DOL.GS.PacketHandler;
-using DOL.GS.Styles;
-using DOL.GS.Effects;
 
 // Boss Mechanics
 // Changes form every ~20 seconds
@@ -19,13 +15,11 @@ using DOL.GS.Effects;
 // Form change accompanied by message, "A ring of magical energy emanates from Hurionthex."
 // Spell animation same as ice wizard PBAOE.
 
-
 namespace DOL.GS
 {
     public class Hurionthex : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Hurionthex()
             : base()
@@ -42,21 +36,14 @@ namespace DOL.GS
             }
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
 
         public override int MaxHealth
         {
             get { return 100000; }
         }
 
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+        public override int MeleeAttackRange => 450;
 
         public override double GetArmorAF(eArmorSlot slot)
         {
@@ -79,36 +66,11 @@ namespace DOL.GS
 
         public override bool AddToWorld() //To make sure after it respawn these checks are correctly set
         {
-            HurionthexBrain.IsBaseForm = false;
-            HurionthexBrain.IsSaiyanForm = false;
-            HurionthexBrain.IsTreantForm = false;
-            HurionthexBrain.IsGranidonForm = false;
-
-            HurionthexBrain.BaseFormCheck = false;
-            HurionthexBrain.GranidonFormCheck = false;
-            HurionthexBrain.TreantFormCheck = false;
-            HurionthexBrain.SaiyanFormCheck = false;
-            HurionthexBrain.SwitchForm = false;
-            HurionthexBrain.reset_checks = false;
-
-            HurionthexBrain.StartForms = false;
-            HurionthexBrain.cast_DA = false;
-            HurionthexBrain.cast_disease = false;
-            HurionthexBrain.cast_DS = false;
-
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162285);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Charisma = npcTemplate.Charisma;
-            Empathy = npcTemplate.Empathy;
+
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
             HurionthexBrain sbrain = new HurionthexBrain();
             SetOwnBrain(sbrain);
@@ -153,7 +115,6 @@ namespace DOL.GS
                 Hurion.X = 55672;
                 Hurion.Y = 43536;
                 Hurion.Z = 12417;
-                Hurion.MaxDistance = 2000;
                 Hurion.MaxSpeedBase = 300;
                 Hurion.Heading = 1035;
 
@@ -178,8 +139,7 @@ namespace DOL.AI.Brain
 {
     public class HurionthexBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public HurionthexBrain()
             : base()
@@ -188,19 +148,19 @@ namespace DOL.AI.Brain
             AggroRange = 750;
         }
 
-        public static bool IsBaseForm = false;
-        public static bool IsSaiyanForm = false;
-        public static bool IsTreantForm = false;
-        public static bool IsGranidonForm = false;
-        public static bool BaseFormCheck = false;
-        public static bool SaiyanFormCheck = false;
-        public static bool TreantFormCheck = false;
-        public static bool GranidonFormCheck = false;
-        public static bool SwitchForm = false;
+        public bool IsBaseForm = false;
+        public bool IsSaiyanForm = false;
+        public bool IsTreantForm = false;
+        public bool IsGranidonForm = false;
+        public bool BaseFormCheck = false;
+        public bool SaiyanFormCheck = false;
+        public bool TreantFormCheck = false;
+        public bool GranidonFormCheck = false;
+        public bool SwitchForm = false;
 
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -249,7 +209,6 @@ namespace DOL.AI.Brain
         {
             Body.Model = 946;
             Body.Size = 120;
-            Body.AttackRange = 450;
             Body.MeleeDamageType = eDamageType.Spirit;
             Body.BodyType = 10; // Plant
 
@@ -277,7 +236,6 @@ namespace DOL.AI.Brain
         {
             Body.Model = 844;
             Body.Size = 160;
-            Body.AttackRange = 450;
             Body.MeleeDamageType = eDamageType.Spirit;
             Body.BodyType = 1; // Animal
 
@@ -305,7 +263,6 @@ namespace DOL.AI.Brain
         {
             Body.Model = 925;
             Body.Size = 150;
-            Body.AttackRange = 450;
             Body.MeleeDamageType = eDamageType.Spirit;
 
             Body.Strength = 300;
@@ -470,7 +427,7 @@ namespace DOL.AI.Brain
             return 0;
         }
 
-        public static bool reset_checks = false;
+        public bool reset_checks = false;
 
         public int ResetChecks(ECSGameTimer timer)
         {
@@ -511,10 +468,10 @@ namespace DOL.AI.Brain
 
         //Todo = Add DA, DS spells
 
-        public static bool StartForms = false;
-        public static bool cast_DA = false;
-        public static bool cast_disease = false;
-        public static bool cast_DS = false;
+        public bool StartForms = false;
+        public bool cast_DA = false;
+        public bool cast_disease = false;
+        public bool cast_DS = false;
 
         public override void Think()
         {
@@ -642,12 +599,11 @@ namespace DOL.AI.Brain
                     spell.Radius = 350;
                     spell.Duration = 60;
                     spell.SpellID = 11731;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "Disease";
                     spell.Uninterruptible = true;
                     spell.DamageType = (int) eDamageType.Energy; //Energy DMG Type
                     m_black_plague = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_black_plague);
                 }
 
                 return m_black_plague;
@@ -674,12 +630,11 @@ namespace DOL.AI.Brain
                     spell.Damage = 20;
                     spell.Duration = 20;
                     spell.SpellID = 11732;
-                    spell.Target = "Self";
+                    spell.Target = eSpellTarget.SELF.ToString();
                     spell.Type = "DamageAdd";
                     spell.Uninterruptible = true;
                     spell.DamageType = (int) eDamageType.Energy; //Energy DMG Type
                     m_damage_add = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_damage_add);
                 }
 
                 return m_damage_add;
@@ -706,12 +661,11 @@ namespace DOL.AI.Brain
                     spell.Damage = 120;
                     spell.Duration = 20;
                     spell.SpellID = 11733;
-                    spell.Target = "Self";
+                    spell.Target = eSpellTarget.SELF.ToString();
                     spell.Type = "DamageShield";
                     spell.Uninterruptible = true;
                     spell.DamageType = (int) eDamageType.Heat; //heat DMG Type
                     m_damage_shield = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_damage_shield);
                 }
 
                 return m_damage_shield;

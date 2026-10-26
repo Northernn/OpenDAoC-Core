@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 40;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -60,13 +53,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(700000018);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			CanSpawnZombies = false;
@@ -76,7 +62,6 @@ namespace DOL.GS
 				CanSpawnZombies = true;
 			}
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			ColialtBrain sbrain = new ColialtBrain();
 			SetOwnBrain(sbrain);
@@ -85,14 +70,14 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(8000))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is ColialtAddsBrain)
 					npc.Die(this);
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
         private void SpawnZombies()
         {
@@ -109,7 +94,7 @@ namespace DOL.GS
         }
 		public override void DealDamage(AttackData ad)
 		{
-			if (ad != null && ad.AttackType == AttackData.eAttackType.Spell && ad.Damage > 0 && ColialtBrain.ColialtPhase)
+			if (ad != null && ad.AttackType == AttackData.eAttackType.Spell && ad.Damage > 0 && Brain is ColialtBrain brain && brain.ColialtPhase)
 			{
 				Health += ad.Damage;
 			}
@@ -117,7 +102,7 @@ namespace DOL.GS
 		}
 		public override void StartAttack(GameObject target)
         {
-			if (ColialtBrain.ColialtPhase)
+			if (Brain is ColialtBrain brain && brain.ColialtPhase)
 				return;
 			else
 				base.StartAttack(target);
@@ -128,14 +113,14 @@ namespace DOL.AI.Brain
 {
 	public class ColialtBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ColialtBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool ColialtPhase = false;
+		public bool ColialtPhase = false;
 		private bool CanFollow = false;
 		public override void Think()
 		{
@@ -221,7 +206,6 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Body;
 					m_ColialtLifeDrain = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ColialtLifeDrain);
 				}
 				return m_ColialtLifeDrain;
 			}
@@ -244,10 +228,7 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -272,7 +253,6 @@ namespace DOL.GS
 			Level = (byte)Util.Random(61, 66);
 			MaxSpeedBase = 225;
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			ColialtAddsBrain sbrain = new ColialtAddsBrain();
 			SetOwnBrain(sbrain);
@@ -286,7 +266,7 @@ namespace DOL.AI.Brain
 {
 	public class ColialtAddsBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ColialtAddsBrain() : base()
 		{
 			AggroLevel = 100;

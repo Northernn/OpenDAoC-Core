@@ -1,28 +1,9 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
 using System;
 using System.Collections;
 using System.Reflection;
-using DOL.GS;
+using System.Threading;
 using DOL.Database;
 using DOL.GS.PacketHandler;
-using log4net;
 
 namespace DOL.GS
 {
@@ -35,9 +16,9 @@ namespace DOL.GS
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-		public PlayerTradeWindow(GamePlayer owner, bool isRecipiantWindow, object sync)
+		public PlayerTradeWindow(GamePlayer owner, bool isRecipiantWindow, Lock sync)
 		{
 			if (owner == null)
 				throw new ArgumentNullException("owner");
@@ -49,7 +30,7 @@ namespace DOL.GS
 			m_combine = false;
 			m_repair = false;
 			m_recipiant = isRecipiantWindow;
-			m_sync = sync;
+			_lock = sync;
 		}
 
 		#region Fields
@@ -86,10 +67,6 @@ namespace DOL.GS
 		/// Holds the flag to know the it's a recipiant window
 		/// </summary>
 		protected bool m_recipiant;
-		/// <summary>
-		/// Holds the trade windows sync object
-		/// </summary>
-		protected object m_sync;
 		/// <summary>
 		/// Stores the begin changes count
 		/// </summary>
@@ -157,13 +134,8 @@ namespace DOL.GS
 			set { m_partnerWindow = value; }
 		}
 
-		/// <summary>
-		/// Gets the access sync object for this and TradePartner windows
-		/// </summary>
-		public object Sync
-		{
-			get { return m_sync; }
-		}
+		private readonly Lock _lock = new();
+		public Lock Lock => _lock;
 
 		/// <summary>
 		/// Gets the item count in trade window
@@ -286,7 +258,7 @@ namespace DOL.GS
                 // Luhz Crafting Update:
                 // Players may now have any, and all, "primary" crafting skills.
                 AbstractCraftingSkill skill = null;
-                lock (m_owner.TradeWindow.Sync)
+                lock (m_owner.TradeWindow.Lock)
                 {
                     foreach (DbInventoryItem i in (ArrayList)m_owner.TradeWindow.TradeItems.Clone())
                     {
@@ -314,7 +286,7 @@ namespace DOL.GS
 					if(((AdvancedCraftingSkill)skill).IsAllowedToCombine(m_owner, itemToCombine))
 					{
 						if(skill is SpellCrafting)
-							((SpellCrafting)skill).ShowSpellCraftingInfos(m_owner, itemToCombine);
+							((SpellCrafting)skill).ShowSpellCraftingInfo(m_owner, itemToCombine);
 
 						m_partnerWindow.m_combine = true;
 						m_combine = true;
@@ -346,7 +318,7 @@ namespace DOL.GS
 		/// <returns>true if added</returns>
 		public bool AddItemToTrade(DbInventoryItem itemForTrade)
 		{
-			lock(Sync)
+			lock(Lock)
 			{
 				// allow admin and gm account opened windows to trade any item
 				if (this.m_owner.Client.Account.PrivLevel == 1)
@@ -373,7 +345,7 @@ namespace DOL.GS
 		/// <param name="money">Array of money values to add</param>
 		public void AddMoneyToTrade(long money)
 		{
-			lock(Sync)
+			lock(Lock)
 			{
 				TradeMoney += money;
 				TradeUpdate();
@@ -389,7 +361,7 @@ namespace DOL.GS
 			if (itemToRemove == null)
 				return;
 
-			lock(Sync)
+			lock(Lock)
 			{
 				TradeItems.Remove(itemToRemove);
 				if(!m_tradeAccept || !m_partnerWindow.m_tradeAccept) TradeUpdate();
@@ -401,22 +373,25 @@ namespace DOL.GS
 		/// </summary>
 		public void TradeUpdate()
 		{
-			lock (Sync)
+			lock (Lock)
 			{
 				m_tradeAccept = false;
 				m_partnerWindow.m_tradeAccept = false;
 
-				if (m_changesCount > 0) return;
+				if (m_changesCount > 0)
+					return;
+
 				if (m_changesCount < 0)
 				{
 					m_changesCount = 0;
+
 					if (log.IsErrorEnabled)
 						log.Error("Changes count is less than 0, forgot to add m_changesCount++?\n\n" + Environment.StackTrace);
 				}
-
-				m_owner.Out.SendTradeWindow();
-				m_partnerWindow.Owner.Out.SendTradeWindow();
 			}
+
+			m_owner.Out.SendTradeWindow();
+			m_partnerWindow.Owner.Out.SendTradeWindow();
 		}
 
 		#endregion	
@@ -428,7 +403,7 @@ namespace DOL.GS
 		/// </summary>
 		public bool AcceptTrade()
 		{
-			lock (Sync)
+			lock (Lock)
 			{
 				m_tradeAccept = true;
 				GamePlayer partner = m_partnerWindow.Owner;
@@ -489,7 +464,7 @@ namespace DOL.GS
                     // Players may now have any, and all, "primary" crafting skills.
                     // AbstractCraftingSkill skill = CraftingMgr.getSkillbyEnum(crafter.CraftingPrimarySkill);
                     AbstractCraftingSkill skill = null;
-                    lock (crafter.TradeWindow.Sync)
+                    lock (crafter.TradeWindow.Lock)
                     {
                         foreach (DbInventoryItem i in (ArrayList)crafter.TradeWindow.TradeItems.Clone())
                         {
@@ -576,9 +551,9 @@ namespace DOL.GS
 					// if inventory is full but removed items count >= received count
                     foreach (DbInventoryItem item in ownerTradeItems)
                     {
-                        lock (m_owner.Inventory)
+                        lock (m_owner.Inventory.Lock)
                         {
-							if (!m_owner.Inventory.RemoveTradeItem(item))
+							if (!m_owner.Inventory.RemoveItemWithoutDbDeletion(item))
 							{
 								if (logTrade)
 									GameServer.Instance.LogGMAction("   NOTItem: " + m_owner.Name + "(" + m_owner.Client.Account.Name + ") -> " + partner.Name + "(" + partner.Client.Account.Name + ") : " + item.Name + "(" + item.Id_nb + ")");
@@ -592,9 +567,9 @@ namespace DOL.GS
                     }
                     foreach (DbInventoryItem item in partnerTradeItems)
                     {
-                        lock (partner.Inventory)
+                        lock (partner.Inventory.Lock)
                         {
-							if (!partner.Inventory.RemoveTradeItem(item))
+							if (!partner.Inventory.RemoveItemWithoutDbDeletion(item))
 							{
 								if (logTrade)
 									GameServer.Instance.LogGMAction("   NOTItem: " + m_owner.Name + "(" + m_owner.Client.Account.Name + ") -> " + partner.Name + "(" + partner.Client.Account.Name + ") : " + item.Name + "(" + item.Id_nb + ")");
@@ -633,7 +608,7 @@ namespace DOL.GS
 						}
 						else
 						{
-							tradeSuccess = partner.Inventory.AddTradeItem(eInventorySlot.FirstEmptyBackpack, itemtoadd);
+							tradeSuccess = partner.Inventory.AddItemWithoutDbAddition(eInventorySlot.FirstEmptyBackpack, itemtoadd);
 						}
 
 						if (!tradeSuccess)
@@ -676,7 +651,7 @@ namespace DOL.GS
 						}
 						else
 						{
-							tradeSuccess = m_owner.Inventory.AddTradeItem(eInventorySlot.FirstEmptyBackpack, itemtoadd);
+							tradeSuccess = m_owner.Inventory.AddItemWithoutDbAddition(eInventorySlot.FirstEmptyBackpack, itemtoadd);
 						}
 
 						if (!tradeSuccess)
@@ -735,7 +710,7 @@ namespace DOL.GS
 		/// </summary>
 		public void CloseTrade()
 		{
-			lock(Sync)
+			lock(Lock)
 			{
 				m_owner.Out.SendCloseTradeWindow();
 				m_partnerWindow.Owner.Out.SendCloseTradeWindow();

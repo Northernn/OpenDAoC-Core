@@ -1,22 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections.Generic;
 using DOL.Database;
@@ -28,20 +9,20 @@ namespace DOL.GS.Commands
 	[Cmd(
 		"&door",
 		ePrivLevel.GM,
-		"GMCommands.door.Description",
+		"GMCommands.Door.Description",
 		"'/door show' toggle enable/disable add dialog when targeting doors",
-		"GMCommands.door.Add",
-		"GMCommands.door.Update",
-		"GMCommands.door.Delete",
-		"GMCommands.door.Name",
-		"GMCommands.door.Level",
-		"GMCommands.door.Realm",
-		"GMCommands.door.Guild",
+		"GMCommands.Door.Add",
+		"GMCommands.Door.Update",
+		"GMCommands.Door.Delete",
+		"GMCommands.Door.Name",
+		"GMCommands.Door.Level",
+		"GMCommands.Door.Realm",
+		"GMCommands.Door.Guild",
 		"'/door sound <soundid>'",
-		"GMCommands.door.Info",
-		"GMCommands.door.Heal",
-		"GMCommands.door.Locked",
-		"GMCommands.door.Unlocked")]
+		"GMCommands.Door.Info",
+		"GMCommands.Door.Heal",
+		"GMCommands.Door.Locked",
+		"GMCommands.Door.Unlocked")]
 	public class NewDoorCommandHandler : AbstractCommandHandler, ICommandHandler
 	{
 		private int DoorID;
@@ -53,11 +34,9 @@ namespace DOL.GS.Commands
 
 		public void OnCommand(GameClient client, string[] args)
 		{
-			GameDoor targetDoor = null;
-
 			if (args.Length > 1 && args[1] == "show" && client.Player != null)
 			{
-				if (client.Player.TempProperties.GetProperty(DoorMgr.WANT_TO_ADD_DOORS, false))
+				if (client.Player.TempProperties.GetProperty<bool>(DoorMgr.WANT_TO_ADD_DOORS))
 				{
 					client.Player.TempProperties.RemoveProperty(DoorMgr.WANT_TO_ADD_DOORS);
 					client.Out.SendMessage("You will no longer be shown the add door dialog.", eChatType.CT_System,
@@ -79,31 +58,14 @@ namespace DOL.GS.Commands
 				return;
 			}
 
-			if (client.Player.TargetObject == null)
-			{
-				client.Out.SendMessage("You must target a door", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				return;
-			}
-
-			if (client.Player.TargetObject != null &&
-			    (client.Player.TargetObject is GameNPC || client.Player.TargetObject is GamePlayer))
-			{
-				client.Out.SendMessage("You must target a door", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				return;
-			}
-
-			if (client.Player.TargetObject != null && client.Player.TargetObject is GameDoor)
-			{
-				targetDoor = (GameDoor) client.Player.TargetObject;
-				DoorID = targetDoor.DoorID;
-				doorType = targetDoor.DoorID/100000000;
-			}
-
-			if (args.Length < 2)
+			if (args.Length < 2 || client.Player.TargetObject is not GameDoorBase targetDoor)
 			{
 				DisplaySyntax(client);
 				return;
 			}
+
+			DoorID = targetDoor.DoorId;
+			doorType = targetDoor.DoorId/100000000;
 
 			switch (args[1])
 			{
@@ -155,7 +117,7 @@ namespace DOL.GS.Commands
 
 		#endregion
 
-		private void add(GameClient client, GameDoor targetDoor)
+		private void add(GameClient client, GameDoorBase targetDoor)
 		{
 			var DOOR = DOLDB<DbDoor>.SelectObject(DB.Column("InternalID").IsEqualTo(DoorID));
 
@@ -181,16 +143,15 @@ namespace DOL.GS.Commands
 					door.Heading = targetDoor.Heading;
 					door.Health = 2545;
 					GameServer.Database.AddObject(door);
-					(targetDoor).AddToWorld();
-					client.Player.Out.SendMessage("Added door ID:" + DoorID + "to the database", eChatType.CT_Important,
-					                              eChatLoc.CL_SystemWindow);
-					//DoorMgr.Init( );
+					targetDoor.LoadFromDatabase(door);
+					DoorMgr.RegisterDoor(targetDoor);
+					client.Player.Out.SendMessage("Added door ID:" + DoorID + "to the database", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
 					return;
 				}
 			}
 		}
 
-		private void update(GameClient client, GameDoor targetDoor)
+		private void update(GameClient client, GameDoorBase targetDoor)
 		{
 			delete(client, targetDoor);
 
@@ -206,46 +167,44 @@ namespace DOL.GS.Commands
 					door.Level = targetDoor.Level;
 					door.Realm = (byte) targetDoor.Realm;
 					door.Health = targetDoor.Health;
-					door.Locked = targetDoor.Locked;
+					door.Locked = Convert.ToInt32(targetDoor.Locked);
 					door.X = client.Player.X;
 					door.Y = client.Player.Y;
 					door.Z = client.Player.Z;
 					door.Heading = client.Player.Heading;
 					GameServer.Database.AddObject(door);
-					(targetDoor).AddToWorld();
-					client.Player.Out.SendMessage("Added door " + DoorID + " to the database", eChatType.CT_Important,
-					                              eChatLoc.CL_SystemWindow);
+					targetDoor.LoadFromDatabase(door);
+					DoorMgr.RegisterDoor(targetDoor);
+					client.Player.Out.SendMessage("Added door " + DoorID + " to the database", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
 					return;
 				}
 			}
 		}
 
-		private void delete(GameClient client, GameDoor targetDoor)
+		private void delete(GameClient client, GameDoorBase targetDoor)
 		{
-			var DOOR = DOLDB<DbDoor>.SelectObject(DB.Column("InternalID").IsEqualTo(DoorID));
+			var dbDoor = DOLDB<DbDoor>.SelectObject(DB.Column("InternalID").IsEqualTo(DoorID));
 
-			if (DOOR != null)
+			if (dbDoor != null)
 			{
-				GameServer.Database.DeleteObject(DOOR);
+				GameServer.Database.DeleteObject(dbDoor);
 				client.Out.SendMessage("Door removed", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				return;
 			}
-			if (DOOR == null)
-			{
-				client.Out.SendMessage("This door doesn't exist in the database", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				return;
-			}
+			else
+				client.Out.SendMessage("This door didn't exist in the database", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+
+			DoorMgr.UnregisterDoor(DoorID);
+			targetDoor.RemoveFromWorld();
 		}
 
-
-		private void name(GameClient client, GameDoor targetDoor, string[] args)
+		private void name(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
-			string doorName = "";
+			string doorName = string.Empty;
 
 			if (args.Length > 2)
 				doorName = String.Join(" ", args, 2, args.Length - 2);
 
-			if (doorName != "")
+			if (doorName != string.Empty)
 			{
 				targetDoor.Name = CheckName(doorName, client);
 				targetDoor.SaveIntoDatabase();
@@ -258,7 +217,7 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private void sound(GameClient client, GameDoor targetDoor, string[] args)
+		private void sound(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
 			uint doorSound;
 
@@ -282,14 +241,14 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private void guild(GameClient client, GameDoor targetDoor, string[] args)
+		private void guild(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
-			string guildName = "";
+			string guildName = string.Empty;
 
 			if (args.Length > 2)
 				guildName = String.Join(" ", args, 2, args.Length - 2);
 
-			if (guildName != "")
+			if (guildName != string.Empty)
 			{
 				targetDoor.GuildName = CheckGuildName(guildName, client);
 				targetDoor.SaveIntoDatabase();
@@ -298,9 +257,9 @@ namespace DOL.GS.Commands
 			}
 			else
 			{
-				if (targetDoor.GuildName != "")
+				if (targetDoor.GuildName != string.Empty)
 				{
-					targetDoor.GuildName = "";
+					targetDoor.GuildName = string.Empty;
 					targetDoor.SaveIntoDatabase();
 					client.Out.SendMessage("Door guild removed", eChatType.CT_System, eChatLoc.CL_SystemWindow);
 				}
@@ -309,7 +268,7 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private void level(GameClient client, GameDoor targetDoor, string[] args)
+		private void level(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
 			byte level;
 
@@ -328,7 +287,7 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private void realm(GameClient client, GameDoor targetDoor, string[] args)
+		private void realm(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
 			byte realm;
 
@@ -346,30 +305,25 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private void info(GameClient client, GameDoor targetDoor)
+		private void info(GameClient client, GameDoorBase targetDoor)
 		{
 			if (targetDoor.Realm == eRealm.None)
 				Realmname = "None";
-
-			if (targetDoor.Realm == eRealm.Albion)
+			else if (targetDoor.Realm == eRealm.Albion)
 				Realmname = "Albion";
-
-			if (targetDoor.Realm == eRealm.Midgard)
+			else if (targetDoor.Realm == eRealm.Midgard)
 				Realmname = "Midgard";
-
-			if (targetDoor.Realm == eRealm.Hibernia)
+			else if (targetDoor.Realm == eRealm.Hibernia)
 				Realmname = "Hibernia";
-
-			if (targetDoor.Realm == eRealm.Door)
+			else if (targetDoor.Realm == eRealm.Door)
 				Realmname = "All";
 
-			if (targetDoor.Locked == 1)
+			if (targetDoor.Locked)
 				statut = " Locked";
-
-			if (targetDoor.Locked == 0)
+			else
 				statut = " Unlocked";
 
-			int doorType = DoorRequestHandler.m_handlerDoorID/100000000;
+			int doorType = DoorRequestHandler.HandlerDoorId / 100000000;
 
 			var info = new List<string>();
 
@@ -391,7 +345,7 @@ namespace DOL.GS.Commands
 			client.Out.SendCustomTextWindow("Door Information", info);
 		}
 
-		private void heal(GameClient client, GameDoor targetDoor)
+		private void heal(GameClient client, GameDoorBase targetDoor)
 		{
 			targetDoor.Health = targetDoor.MaxHealth;
 			targetDoor.SaveIntoDatabase();
@@ -399,31 +353,28 @@ namespace DOL.GS.Commands
 			                       eChatLoc.CL_SystemWindow);
 		}
 
-		private void locked(GameClient client, GameDoor targetDoor)
+		private void locked(GameClient client, GameDoorBase targetDoor)
 		{
-			targetDoor.Locked = 1;
+			targetDoor.Locked = true;
 			targetDoor.SaveIntoDatabase();
 			client.Out.SendMessage("Door " + targetDoor.Name + " is locked", eChatType.CT_System, eChatLoc.CL_SystemWindow);
 		}
 
-		private void unlocked(GameClient client, GameDoor targetDoor)
+		private void unlocked(GameClient client, GameDoorBase targetDoor)
 		{
-			targetDoor.Locked = 0;
+			targetDoor.Locked = false;
 			targetDoor.SaveIntoDatabase();
 			client.Out.SendMessage("Door " + targetDoor.Name + " is unlocked", eChatType.CT_System, eChatLoc.CL_SystemWindow);
 		}
 
-
-		private void kill(GameClient client, GameDoor targetDoor, string[] args)
+		private void kill(GameClient client, GameDoorBase targetDoor, string[] args)
 		{
 			try
 			{
-				lock (targetDoor.XPGainers.SyncRoot)
+				lock (targetDoor.XpGainersLock)
 				{
-					targetDoor.attackComponent.AddAttacker(client.Player);
 					targetDoor.AddXPGainer(client.Player, targetDoor.Health);
 					targetDoor.Die(client.Player);
-					targetDoor.XPGainers.Clear();
 					client.Out.SendMessage("Door " + targetDoor.Name + " health reaches 0", eChatType.CT_System,
 										   eChatLoc.CL_SystemWindow);
 				}
@@ -434,7 +385,7 @@ namespace DOL.GS.Commands
 			}
 		}
 
-		private string CheckName(string name, GameClient client)
+		private static string CheckName(string name, GameClient client)
 		{
 			if (name.Length > 47)
 				client.Out.SendMessage("The door name must not be longer than 47 bytes", eChatType.CT_System,
@@ -442,7 +393,7 @@ namespace DOL.GS.Commands
 			return name;
 		}
 
-		private string CheckGuildName(string name, GameClient client)
+		private static string CheckGuildName(string name, GameClient client)
 		{
 			if (name.Length > 47)
 				client.Out.SendMessage("The guild name is " + name.Length + ", but only 47 bytes 'll be displayed",

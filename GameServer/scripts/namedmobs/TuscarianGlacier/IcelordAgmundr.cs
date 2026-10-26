@@ -1,6 +1,5 @@
 ﻿using System;
 using DOL.AI.Brain;
-using DOL.Events;
 using DOL.Database;
 using DOL.GS;
 using DOL.GS.PacketHandler;
@@ -23,15 +22,7 @@ namespace DOL.GS
             }
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -57,15 +48,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162346);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
 
             GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
@@ -76,8 +59,6 @@ namespace DOL.GS
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
 
-            AgmundrBrain.IsChanged = false;
-            AgmundrBrain.IsPulled = false;
             AgmundrBrain sbrain = new AgmundrBrain();
             SetOwnBrain(sbrain);
             LoadedFromScript = false; //load from database
@@ -87,15 +68,15 @@ namespace DOL.GS
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             BroadcastMessage(String.Format("To come this far... only to face a terrible death!"));
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
     }
 }
@@ -104,8 +85,7 @@ namespace DOL.AI.Brain
 {
     public class AgmundrBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public AgmundrBrain()
             : base()
@@ -115,12 +95,12 @@ namespace DOL.AI.Brain
             ThinkInterval = 2000;
         }
 
-        public static bool IsPulled = false;
-        public static bool IsChanged = false;
+        public bool IsPulled = false;
+        public bool IsChanged = false;
         private bool PulledText = false;
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -192,8 +172,8 @@ namespace DOL.AI.Brain
                 if (npc.NPCTemplate == null) continue;//check for nontemplated mobs
                 if (!npc.IsAlive || npc.PackageID != "AgmundrBaf") continue;
                 if (npc.TargetObject != Body.TargetObject) continue;
-                npc.MaxDistance = 10000; //set mob distance to make it reach target
-                npc.TetherRange = 10000; //set tether to not return to home
+
+                npc.TetherRange = 0; //set tether to not return to home
                 if (!npc.IsWithinRadius(Body.TargetObject, 100))
                 {
                     npc.MaxSpeedBase = 300; //speed is is not near to reach target faster
@@ -238,13 +218,12 @@ namespace DOL.AI.Brain
                 spell.Range = 1500;
                 spell.Radius = 500;
                 spell.SpellID = 11744;
-                spell.Target = "Enemy";
+                spell.Target = eSpellTarget.ENEMY.ToString();
                 spell.Type = "DirectDamageNoVariance";
                 spell.Uninterruptible = true;
                 spell.MoveCast = true;
                 spell.DamageType = (int) eDamageType.Cold;
                 m_AgmundrDD = new Spell(spell, 70);
-                SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_AgmundrDD);
                 return m_AgmundrDD;
             }
         }

@@ -21,7 +21,7 @@ namespace DOL.GS
 
         public GamePlayer GetPartnerOf(GameLiving living)
         {
-            if (living is GameNPC npc && npc.Brain is ControlledNpcBrain brain)
+            if (living is GameNPC npc && npc.Brain is ControlledMobBrain brain)
                 living = brain.GetPlayerOwner();
 
             return living == Starter ? Target : Starter;
@@ -51,7 +51,7 @@ namespace DOL.GS
                 player.LastAttackTickPvP = player.TempProperties.GetProperty<long>(DUEL_PREVIOUS_LASTATTACKTICKPVP);
                 player.LastAttackedByEnemyTickPvP = player.TempProperties.GetProperty<long>(DUEL_PREVIOUS_LASTATTACKEDBYENEMYTICKPVP);
 
-                lock (player.XPGainers.SyncRoot)
+                lock (player.XpGainersLock)
                 {
                     player.XPGainers.Clear();
                 }
@@ -62,12 +62,12 @@ namespace DOL.GS
 
             static void StopEffects(GamePlayer player, GamePlayer caster)
             {
-                Loop(player.effectListComponent.GetAllEffects(), caster);
+                Loop(player.effectListComponent.GetEffects(), caster);
 
                 IControlledBrain controlledBrain = player.ControlledBrain;
 
                 if (controlledBrain != null)
-                    Loop(controlledBrain.Body.effectListComponent.GetAllEffects(), caster);
+                    Loop(controlledBrain.Body.effectListComponent.GetEffects(), caster);
 
                 static void Loop(List<ECSGameEffect> effects, GamePlayer caster)
                 {
@@ -86,7 +86,7 @@ namespace DOL.GS
                         if (spellHandler.Caster == caster || (spellHandler.Caster != null && spellHandler.Caster == petCaster))
                         {
                             effect.TriggersImmunity = false;
-                            EffectService.RequestCancelEffect(effect);
+                            effect.End();
                         }
                     }
                 }

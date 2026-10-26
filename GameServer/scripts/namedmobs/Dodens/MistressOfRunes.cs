@@ -1,11 +1,9 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS;
-using DOL.GS.Effects;
 using DOL.GS.PacketHandler;
 using DOL.GS.Scripts;
 
@@ -25,16 +23,8 @@ namespace DOL.GS.Scripts
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(9907);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			Faction = FactionMgr.GetFactionByID(779);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(778));
 			LoadedFromScript = false; //load from database
 			SaveIntoDatabase();
 			base.AddToWorld();
@@ -42,16 +32,8 @@ namespace DOL.GS.Scripts
 			base.SetOwnBrain(new MistressOfRunesBrain());			
 			return true;
 		}	
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get
-			{ return 350;}
-			set{ }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -91,20 +73,13 @@ namespace DOL.GS.Scripts
 			base.ReturnToSpawnPoint(MaxSpeed);
 		}
 
-		public override void OnAttackedByEnemy(AttackData ad)
-		{
-			if (IsReturningToSpawnPoint)
-				return;
-
-			base.OnAttackedByEnemy(ad);
-		}
 		/// <summary>
 		/// Broadcast relevant messages to the raid.
 		/// </summary>
 		/// <param name="message">The message to be broadcast.</param>
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in base.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in base.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -113,11 +88,11 @@ namespace DOL.GS.Scripts
 		/// Invoked when Mistress of Runes dies.
 		/// </summary>
 		/// <param name="killer">The living that got the killing blow.</param>
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
 		{
 			BroadcastMessage(String.Format(m_DeathAnnounce, Name));
 			base.StopCurrentSpellcast();
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
 		[ScriptLoadedEvent]
 		public static void ScriptLoaded(DOLEvent e, object sender, EventArgs args)
@@ -185,39 +160,13 @@ namespace DOL.AI.Brain
 			base.Think();
 		}
 
-		protected override void CheckNPCAggro()
-		{
-			if (Body.attackComponent.AttackState)
-				return;
-
-			foreach (GameNPC npc in Body.GetNPCsInRadius((ushort)AggroRange))
-			{
-				if (!npc.IsAlive || npc.ObjectState != GameObject.eObjectState.Active)
-					continue;
-
-				if (!GameServer.ServerRules.IsAllowedToAttack(Body, npc, true))
-					continue;
-
-				if (AggroList.ContainsKey(npc))
-					continue; // add only new NPCs
-
-				if (npc.Brain != null && npc.Brain is IControlledBrain)
-				{
-					if (CanAggroTarget(npc))
-					{
-						AddToAggroList(npc, (npc.Level + 1) << 1);
-					}
-				}
-			}
-		}
-
 		/// <summary>
 		/// Broadcast relevant messages to the raid.
 		/// </summary>
 		/// <param name="message">The message to be broadcast.</param>
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -229,26 +178,19 @@ namespace DOL.AI.Brain
 		/// <returns>Whether or not a target was picked.</returns>
 		public bool PickNearsightTarget()
 		{
-			MistressOfRunes mistress = Body as MistressOfRunes;
-
-			if (mistress == null)
+			if (Body is not MistressOfRunes mistress)
 				return false;
 
-			ArrayList inRangeLiving = new ArrayList();
+			List<GameLiving> inRangeLivings = GameLoop.GetListForTick<GameLiving>();
 
-			foreach (GameLiving living in AggroList.Keys)
+			foreach (GameLiving living in GetUnorderedAggroList())
 			{
-				if (living != null &&
-					living.IsAlive &&
-					living.EffectList.GetOfType<NecromancerShadeEffect>() == null &&
-					!mistress.IsWithinRadius(living, mistress.AttackRange))
-				{
-					inRangeLiving.Add(living);
-				}
+				if (!mistress.IsWithinRadius(living, mistress.attackComponent.AttackRange))
+					inRangeLivings.Add(living);
 			}
 
-			if (inRangeLiving.Count > 0)
-				return CheckNearsight((GameLiving)(inRangeLiving[Util.Random(1, inRangeLiving.Count) - 1]));
+			if (inRangeLivings.Count > 0)
+				return CheckNearsight(inRangeLivings[Util.Random(0, inRangeLivings.Count - 1)]);
 
 			return false;
 		}
@@ -397,12 +339,11 @@ namespace DOL.AI.Brain
 					spell.Radius = 450;
 					spell.SpellID = 2958;
 					spell.RecastDelay = SpearRecastInterval;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.MoveCast = false;
 					spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
 					m_AoESpell = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_AoESpell);
 				}
 				return m_AoESpell;
 			}
@@ -437,12 +378,11 @@ namespace DOL.AI.Brain
 					spell.Damage = 0;
 					spell.DamageType = (int)eDamageType.Energy;
 					spell.SpellID = 2735;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.Nearsight.ToString();
 					spell.Message1 = "You are blinded!";
 					spell.Message2 = "{0} is blinded!";
 					m_NearsightSpell = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_NearsightSpell);
 				}
 				return m_NearsightSpell;
 			}

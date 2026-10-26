@@ -39,11 +39,7 @@ namespace DOL.GS
 		{
 			get { return 30000; }
 		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -55,17 +51,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60164519);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(82);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(82));
 
 			NogoribandoBrain sbrain = new NogoribandoBrain();
 			SetOwnBrain(sbrain);
@@ -80,18 +68,18 @@ namespace DOL.AI.Brain
 {
 	public class NogoribandoBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public NogoribandoBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsPulled = false;
-		public static bool IsBig = false;
-		public static bool IsSmall = false;
-		public static bool IsChangingSize = false;
-		public static bool IsInCombat = false;
+		public bool IsPulled = false;
+		public bool IsBig = false;
+		public bool IsSmall = false;
+		public bool IsChangingSize = false;
+		public bool IsInCombat = false;
 		public int ChangeSizeToBig(ECSGameTimer timer)
 		{
 			if (HasAggro && Body.IsAlive)
@@ -196,7 +184,6 @@ namespace DOL.AI.Brain
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_Boss_SC_Debuff = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_SC_Debuff);
 				}
 				return m_Boss_SC_Debuff;
 			}
@@ -222,12 +209,11 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Value = 50;
 					spell.SpellID = 11838;
-					spell.Target = "Self";
+					spell.Target = eSpellTarget.SELF.ToString();
 					spell.Type = eSpellType.CombatSpeedBuff.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_Boss_Haste_Buff = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_Haste_Buff);
 				}
 				return m_Boss_Haste_Buff;
 			}

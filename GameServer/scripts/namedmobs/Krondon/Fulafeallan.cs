@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -16,9 +17,27 @@ namespace DOL.GS
 			if (log.IsInfoEnabled)
 				log.Info("Fulafeallan Initializing...");
 		}
+		private readonly List<FulafeallanAdd> _parts = new();
+		public void RegisterPart(FulafeallanAdd part)
+		{
+			_parts.RemoveAll(p => !p.IsAlive || p.ObjectState != eObjectState.Active);
+			_parts.Add(part);
+		}
+		public bool HasAliveParts
+		{
+			get
+			{
+				foreach (FulafeallanAdd part in _parts)
+				{
+					if (part.IsAlive && part.ObjectState == eObjectState.Active)
+						return true;
+				}
+				return false;
+			}
+		}
 		public override int GetResist(eDamageType damageType)
 		{
-			if (FulafeallanAdd.PartsCount2 > 0)
+			if (HasAliveParts)
 			{
 				switch (damageType)
 				{
@@ -39,15 +58,8 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -85,12 +97,10 @@ namespace DOL.GS
 			Empathy = 400;
 
 			MaxSpeedBase = 250;
-			MaxDistance = 3500;
 			TetherRange = 3800;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			FulafeallanBrain sbrain = new FulafeallanBrain();
 			SetOwnBrain(sbrain);
@@ -101,11 +111,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class FulafeallanBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public FulafeallanBrain() : base()
 		{
 			AggroLevel = 100;
@@ -131,7 +142,6 @@ namespace DOL.AI.Brain
 							if (npc.IsAlive && npc.Brain is FulafeallanAddBrain)
 							{
 								npc.RemoveFromWorld();
-								FulafeallanAdd.PartsCount2 = 0;
 							}
 						}
 					}
@@ -159,8 +169,9 @@ namespace DOL.AI.Brain
 				npc.Z = Body.Z;
 				npc.Heading = Body.Heading;
 				npc.CurrentRegion = Body.CurrentRegion;
-				npc.RespawnInterval = -1;
 				npc.AddToWorld();
+				if (Body is Fulafeallan boss)
+					boss.RegisterPart(npc);
 			}
 		}
 	}
@@ -182,15 +193,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 120;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 300;
@@ -204,12 +208,6 @@ namespace DOL.GS
 		{
 			get { return 3000; }
 		}
-		public static int PartsCount2 = 0;
-		public override void Die(GameObject killer)
-		{
-			--PartsCount2;
-			base.Die(killer);
-		}
 		public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
 		public override short Strength { get => base.Strength; set => base.Strength = 150; }
 		public override bool AddToWorld()
@@ -218,12 +216,10 @@ namespace DOL.GS
 			Level = (byte)(Util.Random(65, 68));
 			Name = "Part of Fulafeallan";
 			Size = (byte)(Util.Random(50, 70));
-			++PartsCount2;
 			MaxSpeedBase = 250;
-			RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
+			RespawnInterval = -1;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			FulafeallanAddBrain sbrain = new FulafeallanAddBrain();
 			SetOwnBrain(sbrain);
@@ -233,11 +229,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class FulafeallanAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public FulafeallanAddBrain() : base()
 		{
 			AggroLevel = 100;

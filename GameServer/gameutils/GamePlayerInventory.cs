@@ -1,1539 +1,1201 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading.Tasks;
 using DOL.Database;
-using DOL.Events;
 using DOL.GS.PacketHandler;
 
 namespace DOL.GS
 {
-	/// <summary>
-	/// This class represents a full player inventory
-	/// and contains functions that can be used to
-	/// add and remove items from the player
-	/// </summary>
-	public class GamePlayerInventory : GameLivingInventory
-	{
-		private static readonly log4net.ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-		#region Constructor/Declaration/LoadDatabase/SaveDatabase
-
-		/// <summary>
-		/// Holds the player that owns
-		/// this inventory
-		/// </summary>
-		protected readonly GamePlayer m_player;
-
-		/// <summary>
-		/// Constructs a new empty inventory for player
-		/// </summary>
-		/// <param name="player">GamePlayer to create the inventory for</param>
-		public GamePlayerInventory(GamePlayer player)
-		{
-			m_player = player;
-		}
-		/// <summary>
-		/// Loads the inventory from the DataBase
-		/// </summary>
-		/// <param name="inventoryID">The inventory ID</param>
-		/// <returns>success</returns>
-		public override bool LoadFromDatabase(string inventoryID)
-		{
-			lock (m_items)
-			{
-				try
-				{
-					m_items.Clear();
-
-					// We only want to cache items in the players personal inventory and personal vault.
-					// If we cache ALL items them all vault code must make sure to update cache, which is not ideal
-					// in addition, a player with a housing vault may still have an item in cache that may have been
-					// removed by another player with the appropriate house permission.  - Tolakram
-					var filterBySlot = DB.Column("SlotPosition").IsLessOrEqualTo((int)eInventorySlot.LastVault).Or(DB.Column("SlotPosition").IsGreaterOrEqualTo(500).And(DB.Column("SlotPosition").IsLessThan(600)));
-					var items = DOLDB<DbInventoryItem>.SelectObjects(DB.Column("OwnerID").IsEqualTo(inventoryID).And(filterBySlot));
-
-					foreach (DbInventoryItem item in items)
-					{
-						try
-						{
-							var itemSlot = (eInventorySlot)item.SlotPosition;
-
-							if (item.CanUseEvery > 0)
-							{
-								item.SetCooldown();
-							}
-
-							if (GetValidInventorySlot((eInventorySlot)item.SlotPosition) == eInventorySlot.Invalid)
-							{
-								if (Log.IsErrorEnabled)
-									Log.Error("Tried to load an item in invalid slot, ignored. Item id=" + item.ObjectId);
-
-								continue;
-							}
-
-							if (m_items.ContainsKey(itemSlot))
-							{
-								if (Log.IsErrorEnabled)
-								{
-									Log.ErrorFormat("Error loading {0}'s ({1}) inventory!\nDuplicate item {2} found in slot {3}; Skipping!",
-									                m_player.Name, inventoryID, item.Name, itemSlot);
-								}
-
-								continue;
-							}
-
-							// Depending on whether or not the item is an artifact we will
-							// create different types of inventory items. That way we can speed
-							// up item type checks and implement item delve information in
-							// a natural way, i.e. through inheritance.
-
-							// Tolakram - Leaving this functionality as is for now.  InventoryArtifact now inherits from
-							// GameInventoryItem and utilizes the new Delve system.  No need to set ClassType for all artifacts when
-							// this code works fine as is.
-
-
-							GameInventoryItem playerItem = GameInventoryItem.Create(item);
-
-							if (playerItem.CheckValid(m_player))
-							{
-								m_items.Add(itemSlot, playerItem as DbInventoryItem);
-							}
-							else
-							{
-								Log.ErrorFormat("Item '{0}', ClassType '{1}' failed valid test for player '{2}'!", item.Name, item.ClassType, m_player.Name);
-								GameInventoryItem invalidItem = new GameInventoryItem();
-								invalidItem.Name = "Invalid Item";
-								invalidItem.OwnerID = item.OwnerID;
-								invalidItem.SlotPosition = item.SlotPosition;
-								invalidItem.AllowAdd = false;
-								m_items.Add(itemSlot, invalidItem);
-							}
-
-							if (Log.IsWarnEnabled)
-							{
-								// bows don't use damage type - no warning needed
-								if (GlobalConstants.IsWeapon(item.Object_Type)
-								    && item.Type_Damage == 0
-								    && item.Object_Type != (int)eObjectType.CompositeBow
-								    && item.Object_Type != (int)eObjectType.Crossbow
-								    && item.Object_Type != (int)eObjectType.Longbow
-								    && item.Object_Type != (int)eObjectType.Fired
-								    && item.Object_Type != (int)eObjectType.RecurvedBow)
-								{
-									Log.Warn(m_player.Name + ": weapon with damage type 0 is loaded \"" + item.Name + "\" (" + item.ObjectId + ")");
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							Log.Error("Error loading player inventory (" + inventoryID + "), Inventory_ID: " +
-							          item.ObjectId +
-							          " (" + (item.ITemplate_Id == null ? "" : item.ITemplate_Id) +
-							          ", " + (item.UTemplate_Id == null ? "" : item.UTemplate_Id) +
-							          "), slot: " + item.SlotPosition, ex);
-						}
-					}
-
-					// notify handlers that the item was just equipped
-					foreach (eInventorySlot slot in EQUIP_SLOTS)
-					{
-						// skip weapons. only active weapons should fire equip event, done in player.SwitchWeapon
-						if (slot >= eInventorySlot.RightHandWeapon && slot <= eInventorySlot.DistanceWeapon)
-							continue;
-
-						DbInventoryItem item;
-
-						if (m_items.TryGetValue(slot, out item))
-						{
-							m_player.Notify(PlayerInventoryEvent.ItemEquipped, this, new ItemEquippedArgs(item, slot));
-						}
-					}
-
-					return true;
-				}
-				catch (Exception e)
-				{
-					if (Log.IsErrorEnabled)
-						Log.Error("Error loading player inventory (" + inventoryID + ").  Load aborted!", e);
-
-					return false;
-				}
-			}
-		}
-
-		/// <summary>
-		/// Saves all dirty items to database
-		/// </summary>
-		/// <param name="inventoryID">The inventory ID</param>
-		/// <returns>success</returns>
-		public override bool SaveIntoDatabase(string inventoryID)
-		{
-			lock (m_items) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
-			{
-				try
-				{
-					foreach (var item in m_items)
-					{
-						try
-						{
-							DbInventoryItem currentItem = item.Value;
-
-							if (currentItem == null)
-								continue;
-
-							bool canPersist = true;
-							GameInventoryItem gameItem = currentItem as GameInventoryItem;
-							if (gameItem != null)
-							{
-								canPersist = gameItem.CanPersist;
-							}
-
-							if (canPersist == false)
-								continue;
-
-							if (GetValidInventorySlot((eInventorySlot) currentItem.SlotPosition) == eInventorySlot.Invalid)
-							{
-								if (Log.IsErrorEnabled)
-									Log.Error("item's slot position is invalid. item slot=" + currentItem.SlotPosition + " id=" +
-									          currentItem.ObjectId);
-
-								continue;
-							}
-
-							if (currentItem.OwnerID != m_player.InternalID)
-							{
-								string itemOwner = currentItem.OwnerID ?? "(null)";
-
-								if (Log.IsErrorEnabled)
-									Log.Error("item owner id (" + itemOwner + ") not equals player ID (" + m_player.InternalID + "); item ID=" +
-									          currentItem.ObjectId);
-
-								continue;
-							}
-
-							if (currentItem.Dirty)
-							{
-								var realSlot = (int) item.Key;
-
-								if (currentItem.SlotPosition != realSlot)
-								{
-									if (Log.IsErrorEnabled)
-										Log.Error("Item slot and real slot position are different. Item slot=" + currentItem.SlotPosition +
-										          " real slot=" + realSlot + " item ID=" + currentItem.ObjectId);
-									currentItem.SlotPosition = realSlot; // just to be sure
-								}
-
-								// Check database to make sure player still owns this item before saving
-
-								DbInventoryItem checkItem = GameServer.Database.FindObjectByKey<DbInventoryItem>(currentItem.ObjectId);
-
-								if (checkItem == null || checkItem.OwnerID != m_player.InternalID)
-								{
-									if (checkItem != null)
-									{
-										Log.ErrorFormat("Item '{0}' : '{1}' does not have same owner id on save inventory.  Game Owner = '{2}' : '{3}', DB Owner = '{4}'", currentItem.Name, currentItem.ObjectId, m_player.Name, m_player.InternalID, checkItem.OwnerID);
-									}
-									else
-									{
-										Log.ErrorFormat("Item '{0}' : '{1}' not found in DBInventory for player '{2}'", currentItem.Name, currentItem.Id_nb, m_player.Name);
-									}
-
-									continue;
-								}
-
-								GameServer.Database.SaveObject(currentItem);
-							}
-						}
-						catch (Exception e)
-						{
-							if (Log.IsErrorEnabled)
-								Log.Error("Error saving inventory item: player=" + m_player.Name, e);
-						}
-					}
-
-					return true;
-				}
-				catch (Exception e)
-				{
-					if (Log.IsErrorEnabled)
-						Log.Error("Saving player inventory (" + m_player.Name + ")", e);
-
-					return false;
-				}
-			}
-		}
-
-		#endregion Constructor/Declaration/LoadDatabase/SaveDatabase
-
-		#region Add/Remove
-
-		/// <summary>
-		/// Adds an item to the inventory and DB
-		/// </summary>
-		/// <param name="slot"></param>
-		/// <param name="item"></param>
-		/// <returns></returns>
-		public override bool AddItem(eInventorySlot slot, DbInventoryItem item)
-		{
-			return AddItem(slot, item, true);
-		}
-
-		public override bool AddTradeItem(eInventorySlot slot, DbInventoryItem item)
-		{
-			return AddItem(slot, item, false);
-		}
-
-		protected bool AddItem(eInventorySlot slot, DbInventoryItem item, bool addObject)
-		{
-			int savePosition = item.SlotPosition;
-			string saveOwnerID = item.OwnerID;
-
-			if (!base.AddItem(slot, item))
-				return false;
-
-			item.OwnerID = m_player.InternalID;
-
-			bool canPersist = true;
-			GameInventoryItem gameItem = item as GameInventoryItem;
-			if (gameItem != null)
-			{
-				canPersist = gameItem.CanPersist;
-			}
-
-			if (canPersist)
-			{
-				if (addObject)
-				{
-					if (GameServer.Database.AddObject(item) == false)
-					{
-						m_player.Out.SendMessage("Error adding item to the database, item may be lost!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-						Log.ErrorFormat("Error adding item {0}:{1} for player {2} into the database during AddItem!", item.Id_nb, item.Name, m_player.Name);
-						m_items.Remove(slot);
-						item.SlotPosition = savePosition;
-						item.OwnerID = saveOwnerID;
-						return false;
-					}
-				}
-				else
-				{
-					if (GameServer.Database.SaveObject(item) == false)
-					{
-						m_player.Out.SendMessage("Error saving item to the database, this item may be lost!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-						Log.ErrorFormat("Error saving item {0}:{1} for player {2} into the database during AddItem!", item.Id_nb, item.Name, m_player.Name);
-						m_items.Remove(slot);
-						item.SlotPosition = savePosition;
-						item.OwnerID = saveOwnerID;
-						return false;
-					}
-				}
-			}
-
-			if (IsEquippedSlot((eInventorySlot)item.SlotPosition))
-				m_player.Notify(PlayerInventoryEvent.ItemEquipped, this, new ItemEquippedArgs(item, eInventorySlot.Invalid));
-
-			if (item is IGameInventoryItem)
-			{
-				(item as IGameInventoryItem).OnReceive(m_player);
-			}
-
-			return true;
-		}
-
-		public override bool RemoveItem(DbInventoryItem item)
-		{
-			return RemoveItem(item, true);
-		}
-
-		public override bool RemoveTradeItem(DbInventoryItem item)
-		{
-			return RemoveItem(item, false);
-		}
-
-		/// <summary>
-		/// Removes an item from the inventory and DB
-		/// </summary>
-		/// <param name="item">the item to remove</param>
-		/// <returns>true if successfull</returns>
-		protected bool RemoveItem(DbInventoryItem item, bool deleteObject)
-		{
-			if (item == null)
-				return false;
-
-			if (item.OwnerID != m_player.InternalID)
-			{
-				if (Log.IsErrorEnabled)
-					Log.Error(m_player.Name + ": PlayerInventory -> tried to remove item with wrong owner (" + (item.OwnerID ?? "null") +
-					          ")\n\n" + Environment.StackTrace);
-				return false;
-			}
-
-			int savePosition = item.SlotPosition;
-			string saveOwnerID = item.OwnerID;
-
-
-			var oldSlot = (eInventorySlot) item.SlotPosition;
-
-			if (!base.RemoveItem(item))
-				return false;
-
-			bool canPersist = true;
-			GameInventoryItem gameItem = item as GameInventoryItem;
-			if (gameItem != null)
-			{
-				canPersist = gameItem.CanPersist;
-			}
-
-			if (canPersist)
-			{
-				if (deleteObject)
-				{
-					if (GameServer.Database.DeleteObject(item) == false)
-					{
-						m_player.Out.SendMessage("Error deleting item from the database, operation aborted!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-						Log.ErrorFormat("Error deleting item {0}:{1} for player {2} from the database during RemoveItem!", item.Id_nb, item.Name, m_player.Name);
-						m_items.Add(oldSlot, item);
-						item.SlotPosition = savePosition;
-						item.OwnerID = saveOwnerID;
-						return false;
-					}
-				}
-				else
-				{
-					if (GameServer.Database.SaveObject(item) == false)
-					{
-						m_player.Out.SendMessage("Error saving item to the database, operation aborted!", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-						Log.ErrorFormat("Error saving item {0}:{1} for player {2} to the database during RemoveItem!", item.Id_nb, item.Name, m_player.Name);
-						m_items.Add(oldSlot, item);
-						item.SlotPosition = savePosition;
-						item.OwnerID = saveOwnerID;
-						return false;
-					}
-				}
-			}
-
-			ITradeWindow window = m_player.TradeWindow;
-			if (window != null)
-				window.RemoveItemToTrade(item);
-
-			if (oldSlot >= eInventorySlot.RightHandWeapon && oldSlot <= eInventorySlot.DistanceWeapon)
-			{
-				// if active weapon was destroyed
-				if (m_player.ActiveWeapon == null)
-				{
-					m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-				}
-				else
-				{
-					m_player.Notify(PlayerInventoryEvent.ItemUnequipped, this, new ItemUnequippedArgs(item, oldSlot));
-				}
-			}
-			else if (oldSlot >= eInventorySlot.FirstQuiver && oldSlot <= eInventorySlot.FourthQuiver)
-			{
-				m_player.SwitchQuiver(eActiveQuiverSlot.None, true);
-			}
-			else if (IsEquippedSlot(oldSlot))
-			{
-				m_player.Notify(PlayerInventoryEvent.ItemUnequipped, this, new ItemUnequippedArgs(item, oldSlot));
-			}
-
-			if (item is IGameInventoryItem)
-			{
-				(item as IGameInventoryItem).OnLose(m_player);
-			}
-
-			return true;
-		}
-
-		/// <summary>
-		/// Adds count of items to the inventory item
-		/// </summary>
-		/// <param name="item"></param>
-		/// <param name="count"></param>
-		/// <returns></returns>
-		public override bool AddCountToStack(DbInventoryItem item, int count)
-		{
-			if (item != null && item.OwnerID != m_player.InternalID)
-			{
-				if (Log.IsErrorEnabled)
-					Log.Error("Item owner not equals inventory owner.\n" + Environment.StackTrace);
-
-				return false;
-			}
-
-			return base.AddCountToStack(item, count);
-		}
-
-		/// <summary>
-		/// Removes one item from the inventory item
-		/// </summary>
-		/// <param name="item">the item to remove</param>
-		/// <param name="count">the count of items to be removed from the stack</param>
-		/// <returns>true one item removed</returns>
-		public override bool RemoveCountFromStack(DbInventoryItem item, int count)
-		{
-			if (item != null && item.OwnerID != m_player.InternalID)
-			{
-				if (Log.IsErrorEnabled)
-					Log.Error("Item owner not equals inventory owner.\n\n" + Environment.StackTrace);
-
-				return false;
-			}
-
-			return base.RemoveCountFromStack(item, count);
-		}
-
-		#endregion Add/Remove
-
-		#region Get Inventory Informations
-
-		/// <summary>
-		/// Check if the slot is valid in this inventory
-		/// </summary>
-		/// <param name="slot">SlotPosition to check</param>
-		/// <returns>the slot if it's valid or eInventorySlot.Invalid if not</returns>
-		protected override eInventorySlot GetValidInventorySlot(eInventorySlot slot)
-		{
-			switch (slot)
-			{
-				case eInventorySlot.LastEmptyQuiver:
-					slot = FindLastEmptySlot(eInventorySlot.FirstQuiver, eInventorySlot.FourthQuiver);
-					break;
-				case eInventorySlot.FirstEmptyQuiver:
-					slot = FindFirstEmptySlot(eInventorySlot.FirstQuiver, eInventorySlot.FourthQuiver);
-					break;
-				case eInventorySlot.LastEmptyVault:
-					slot = FindLastEmptySlot(eInventorySlot.FirstVault, eInventorySlot.LastVault);
-					break;
-				case eInventorySlot.FirstEmptyVault:
-					slot = FindFirstEmptySlot(eInventorySlot.FirstVault, eInventorySlot.LastVault);
-					break;
-				case eInventorySlot.LastEmptyBackpack:
-					slot = FindLastEmptySlot(eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
-					break;
-				case eInventorySlot.FirstEmptyBackpack:
-					slot = FindFirstEmptySlot(eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
-					break;
-					// INVENTAIRE DES CHEVAUX
-				case eInventorySlot.LastEmptyBagHorse:
-					slot = FindLastEmptySlot(eInventorySlot.FirstBagHorse, eInventorySlot.LastBagHorse);
-					break;
-				case eInventorySlot.FirstEmptyBagHorse:
-					slot = FindFirstEmptySlot(eInventorySlot.FirstBagHorse, eInventorySlot.LastBagHorse);
-					break;
-			}
-
-			if ((slot >= eInventorySlot.FirstBackpack && slot <= eInventorySlot.LastBackpack)
-			    //				|| ( slot >= eInventorySlot.Mithril && slot <= eInventorySlot.Copper ) // can't place items in money slots, is it?
-			    || (slot >= eInventorySlot.HorseArmor && slot <= eInventorySlot.Horse)
-			    || (slot >= eInventorySlot.FirstVault && slot <= eInventorySlot.LastVault)
-			    || (slot >= eInventorySlot.HouseVault_First && slot <= eInventorySlot.HouseVault_Last)
-			    || (slot >= eInventorySlot.Consignment_First && slot <= eInventorySlot.Consignment_Last)
-			    || (slot == eInventorySlot.PlayerPaperDoll)
-			    || (slot == eInventorySlot.Mythical)
-			    // INVENTAIRE DES CHEVAUX
-			    || (slot >= eInventorySlot.FirstBagHorse && slot <= eInventorySlot.LastBagHorse))
-				return slot;
-
-
-			return base.GetValidInventorySlot(slot);
-		}
-
-		#endregion Get Inventory Informations
-
-		#region Move Item
-
-		/// <summary>
-		/// Moves an item from one slot to another
-		/// </summary>
-		/// <param name="fromSlot">First SlotPosition</param>
-		/// <param name="toSlot">Second SlotPosition</param>
-		/// <param name="itemCount">How many items to move</param>
-		/// <returns>true if items switched successfully</returns>
-		public override bool MoveItem(eInventorySlot fromSlot, eInventorySlot toSlot, int itemCount)
-		{
-			if (!m_player.IsAlive)
-			{
-				m_player.Out.SendMessage("You can't change your inventory when dead!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				m_player.Out.SendInventorySlotsUpdate(null);
-
-				return false;
-			}
-
-			bool valid = true;
-			DbInventoryItem fromItem, toItem;
-			eInventorySlot[] updatedSlots;
-
-			lock (m_items) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
-			{
-				fromSlot = GetValidInventorySlot(fromSlot);
-				toSlot = GetValidInventorySlot(toSlot);
-
-				if (fromSlot == eInventorySlot.Invalid || toSlot == eInventorySlot.Invalid)
-				{
-					ChatUtil.SendDebugMessage(m_player, string.Format("Invalid slot from: {0}, to: {1}!", fromSlot, toSlot));
-					m_player.Out.SendInventorySlotsUpdate(null);
-					return false;
-				}
-
-				// just change active weapon if placed in same slot
-				if (fromSlot == toSlot)
-				{
-					switch (toSlot)
-					{
-						case eInventorySlot.RightHandWeapon:
-						case eInventorySlot.LeftHandWeapon:
-							m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-							return false;
-						case eInventorySlot.TwoHandWeapon:
-							m_player.SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-							return false;
-						case eInventorySlot.DistanceWeapon:
-							m_player.SwitchWeapon(eActiveWeaponSlot.Distance);
-							return false;
-					}
-				}
-
-				m_items.TryGetValue(fromSlot, out fromItem);
-				m_items.TryGetValue(toSlot, out toItem);
-
-				updatedSlots = new eInventorySlot[2];
-				updatedSlots[0] = fromSlot;
-				updatedSlots[1] = toSlot;
-
-				if (fromItem == toItem || fromItem == null)
-					valid = false;
-				
-				/*************** Horse Inventory **************/
-				if (((toSlot >= eInventorySlot.FirstBagHorse && toSlot <= eInventorySlot.LastBagHorse) ||
-				     (fromSlot >= eInventorySlot.FirstBagHorse && fromSlot <= eInventorySlot.LastBagHorse)))
-				{
-					if (fromSlot == eInventorySlot.Horse)
-					{
-						// don't let player move active horse to a horse bag, which will disable all bags!
-						m_player.Out.SendMessage("You can't move your active horse into a saddlebag!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-						valid = false;
-					}
-
-					if (valid && m_player.Client.Account.PrivLevel == 1)
-					{
-						if (m_player.CanUseHorseInventorySlot((int)fromSlot) == false || m_player.CanUseHorseInventorySlot((int)toSlot) == false)
-						{
-							valid = false;
-						}
-					}
-				}
-				/***********************************************/
-				
-				if (valid && toItem != null && fromItem.Object_Type == (int) eObjectType.Poison &&
-				    GlobalConstants.IsWeapon(toItem.Object_Type))
-				{
-					m_player.ApplyPoison(fromItem, toItem);
-					m_player.Out.SendInventorySlotsUpdate(null);
-
-					return false;
-				}
-
-				// TODO test & remove the following
-				// graveen = fix for allowedclasses is empty or null
-				if (fromItem != null && string.IsNullOrEmpty(fromItem.AllowedClasses))
-				{
-					fromItem.AllowedClasses = "";
-				}
-
-				if (toItem != null && string.IsNullOrEmpty(toItem.AllowedClasses))
-				{
-					toItem.AllowedClasses = "";
-				}
-
-                bool noactiveslot = false;
-                //Andraste - Vico / fixing a bugexploit : when player switch from his char slot to an inventory slot, allowedclasses were not checked
-                if (valid && !string.IsNullOrEmpty(fromItem.AllowedClasses))
+    /// <summary>
+    /// This class represents a full player inventory
+    /// and contains functions that can be used to
+    /// add and remove items from the player
+    /// </summary>
+    public class GamePlayerInventory : GameLivingInventory
+    {
+        private static readonly Logging.Logger Log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        #region Constructor/Declaration/LoadDatabase/SaveDatabase
+
+        /// <summary>
+        /// Holds the player that owns
+        /// this inventory
+        /// </summary>
+        protected readonly GamePlayer m_player;
+
+        /// <summary>
+        /// Constructs a new empty inventory for player
+        /// </summary>
+        /// <param name="player">GamePlayer to create the inventory for</param>
+        public GamePlayerInventory(GamePlayer player)
+        {
+            m_player = player;
+        }
+
+        public override bool LoadFromDatabase(string inventoryId)
+        {
+            var items = GameLoopAsyncHelper.GetResult(StartLoadFromDatabaseTask(inventoryId));
+            return LoadInventory(inventoryId, items);
+        }
+
+        public override Task<IList> StartLoadFromDatabaseTask(string inventoryId)
+        {
+            // We only want to cache items in the players personal inventory and personal vault.
+            // If we cache ALL items them all vault code must make sure to update cache, which is not ideal
+            // in addition, a player with a housing vault may still have an item in cache that may have been
+            // removed by another player with the appropriate house permission.
+
+            WhereClause whereClause = DB.Column("SlotPosition").IsLessOrEqualTo((int) eInventorySlot.LastVault).Or(DB.Column("SlotPosition").IsGreaterOrEqualTo(500).And(DB.Column("SlotPosition").IsLessThan(600)));
+            return DOLDB<DbInventoryItem>.SelectObjectsAsync(DB.Column("OwnerID").IsEqualTo(inventoryId).And(whereClause)).ContinueWith(task => task.Result as IList);
+        }
+
+        public override bool LoadInventory(string inventoryId, IList items)
+        {
+            lock (Lock)
+            {
+                try
                 {
+                    m_items.Clear();
 
-                    if (toSlot >= eInventorySlot.MaxEquipable)
-                        noactiveslot = true;
-
-                    if (!(toSlot >= eInventorySlot.FirstBackpack && toSlot <= eInventorySlot.LastBackpack) && !noactiveslot)
-                    // but we allow the player to switch the item inside his inventory (check only char slots)
+                    foreach (DbInventoryItem item in items)
                     {
-                        valid = false;
-                        foreach (string allowed in Util.SplitCSV(fromItem.AllowedClasses, true))
+                        try
                         {
-                            if (m_player.CharacterClass.ID.ToString() == allowed || m_player.Client.Account.PrivLevel > 1)
+                            eInventorySlot itemSlot = (eInventorySlot) item.SlotPosition;
+
+                            if (item.CanUseEvery > 0)
+                                item.SetCooldown();
+
+                            if (GetValidInventorySlot((eInventorySlot) item.SlotPosition) is eInventorySlot.Invalid)
                             {
-                                valid = true;
-                                break;
+                                if (Log.IsErrorEnabled)
+                                    Log.Error($"Tried to load an item in invalid slot, ignored. Item id={item.ObjectId}");
+
+                                continue;
                             }
 
-                        }
+                            if (m_items.ContainsKey(itemSlot))
+                            {
+                                if (Log.IsErrorEnabled)
+                                    Log.Error($"Error loading {m_player.Name}'s ({inventoryId}) inventory!\nDuplicate item {item.Name} found in slot {itemSlot}; Skipping!");
 
-                        if (!valid)
+                                continue;
+                            }
+
+                            // Depending on whether or not the item is an artifact we will
+                            // create different types of inventory items. That way we can speed
+                            // up item type checks and implement item delve information in
+                            // a natural way, i.e. through inheritance.
+                            GameInventoryItem playerItem = GameInventoryItem.Create(item);
+
+                            // Since the `DbInventoryItem` has just been loaded and we had to recreate one because of poo poo design, we need to take a new snapshot.
+                            // The snapshot is used to ensure we're not saving every column on the next save.
+                            playerItem.Dirty = false;
+                            playerItem.TakeSnapshot();
+
+                            if (!playerItem.CheckValid(m_player))
+                            {
+                                if (Log.IsErrorEnabled)
+                                    Log.ErrorFormat($"Item '{item.Name}', ClassType '{item.ClassType}' failed valid test for player '{m_player.Name}'!");
+
+                                continue;
+                            }
+
+                            m_items.Add(itemSlot, playerItem);
+                        }
+                        catch (Exception ex)
                         {
-                            m_player.Out.SendMessage("Your class cannot use this item!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                            if (Log.IsErrorEnabled)
+                                Log.Error($"Error loading player inventory ({inventoryId}), Inventory_ID: {item.ObjectId} ({item.ITemplate_Id ?? ""}, {item.UTemplate_Id ?? ""}), slot: {item.SlotPosition}", ex);
+                        }
+                    }
+
+                    foreach (eInventorySlot slot in EquipmentSlots)
+                    {
+                        if (slot is >= eInventorySlot.RightHandWeapon and <= eInventorySlot.DistanceWeapon)
+                            continue;
+
+                        if (m_items.TryGetValue(slot, out DbInventoryItem item))
+                            m_player.OnItemEquipped(item, slot);
+                    }
+
+                    UpdateInventoryWeight();
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    if (Log.IsErrorEnabled)
+                        Log.Error($"Error loading player inventory ({inventoryId}). Load aborted!", e);
+
+                    return false;
+                }
+            }
+        }
+
+        public override bool SaveIntoDatabase(string inventoryID)
+        {
+            List<DbInventoryItem> itemsToDelete = new();
+            List<DbInventoryItem> itemsToUpdate = new();
+            List<DbInventoryItem> itemsToAdd = new();
+
+            lock (Lock)
+            {
+                // Collect items to be deleted.
+                foreach (DbInventoryItem item in _itemsAwaitingDeletion)
+                {
+                    bool canPersist = item is not GameInventoryItem gameItem || gameItem.CanPersist;
+
+                    if (canPersist)
+                        itemsToDelete.Add(item);
+                }
+
+                _itemsAwaitingDeletion.Clear();
+
+                // Collect items to be updated or added.
+                foreach (var pair in m_items)
+                {
+                    DbInventoryItem item = pair.Value;
+
+                    if (item == null)
+                        continue;
+
+                    bool canPersist = item is not GameInventoryItem gameItem || gameItem.CanPersist;
+
+                    if (!canPersist)
+                        continue;
+
+                    int slot = (int) pair.Key;
+
+                    if (item.SlotPosition != slot)
+                    {
+                        if (Log.IsErrorEnabled)
+                            Log.Error($"Item's slot doesn't match. Changing it to InventorySlot. (SlotPosition: {item.SlotPosition}) (InventorySlot: {slot}) (ObjectId: {item.ObjectId}");
+
+                        item.SlotPosition = slot;
+                    }
+
+                    if (GetValidInventorySlot((eInventorySlot) item.SlotPosition) is eInventorySlot.Invalid)
+                    {
+                        if (Log.IsErrorEnabled)
+                            Log.Error($"Item's slot position is invalid. (SlotPosition: {item.SlotPosition}) (ObjectId: {item.ObjectId})");
+
+                        continue;
+                    }
+
+                    if (item.OwnerID != m_player.InternalID)
+                    {
+                        if (Log.IsErrorEnabled)
+                            Log.Error($"Item's owner ID doesn't equal inventory owner's ID. (ItemOwner: {item.OwnerID}) (InventoryOwner: {m_player.InternalID}) (ObjectId: {item.ObjectId}");
+
+                        continue;
+                    }
+
+                    if (item.IsStackable && item.Count == 0) // Failsafe in case count wasn't properly tracked.
+                        itemsToDelete.Add(item);
+                    else if (item.IsPersisted)
+                        itemsToUpdate.Add(item);
+                    else
+                        itemsToAdd.Add(item);
+                }
+            }
+
+            if (itemsToDelete.Count > 0)
+            {
+                try
+                {
+                    GameServer.Database.DeleteObject(itemsToDelete);
+                }
+                catch (Exception e)
+                {
+                    if (Log.IsErrorEnabled)
+                        Log.Error($"Error during batch deleting items. (Item count: {itemsToDelete.Count}) (Player: {m_player})", e);
+                }
+            }
+
+            if (itemsToUpdate.Count > 0)
+            {
+                try
+                {
+                    GameServer.Database.SaveObject(itemsToUpdate);
+                }
+                catch (Exception e)
+                {
+                    if (Log.IsErrorEnabled)
+                        Log.Error($"Error during batch saving (updating) items. (Item count: {itemsToUpdate.Count}) (Player: {m_player})", e);
+                }
+            }
+
+            if (itemsToAdd.Count > 0)
+            {
+                try
+                {
+                    GameServer.Database.AddObject(itemsToAdd);
+                }
+                catch (Exception e)
+                {
+                    if (Log.IsErrorEnabled)
+                        Log.Error($"Error during batch adding (inserting) items. (Item count: {itemsToAdd.Count}) (Player: {m_player})", e);
+                }
+            }
+
+            return true;
+        }
+
+        #endregion Constructor/Declaration/LoadDatabase/SaveDatabase
+
+        #region Add/Remove
+
+        public override bool AddItem(eInventorySlot slot, DbInventoryItem item)
+        {
+            return AddItem(slot, item, true);
+        }
+
+        public override bool AddItemWithoutDbAddition(eInventorySlot slot, DbInventoryItem item)
+        {
+            return AddItem(slot, item, false);
+        }
+
+        private bool AddItem(eInventorySlot slot, DbInventoryItem item, bool markForAddition)
+        {
+            if (!base.AddItem(slot, item))
+                return false;
+
+            item.OwnerID = m_player.InternalID;
+
+            if (markForAddition)
+            {
+                bool canPersist = true;
+
+                if (item is GameInventoryItem gameItem)
+                    canPersist = gameItem.CanPersist;
+
+                if (canPersist)
+                {
+                    for (int i = _itemsAwaitingDeletion.Count - 1; i >= 0; i--)
+                    {
+                        DbInventoryItem _itemAwaitingDeletion = _itemsAwaitingDeletion[i];
+
+                        if (_itemAwaitingDeletion == item)
+                        {
+                            _itemsAwaitingDeletion.SwapRemoveAt(i);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (IsEquippedSlot((eInventorySlot) item.SlotPosition))
+                m_player.OnItemEquipped(item, eInventorySlot.Invalid);
+
+            (item as IGameInventoryItem)?.OnReceive(m_player);
+            return true;
+        }
+
+        public override bool RemoveItem(DbInventoryItem item)
+        {
+            return RemoveItem(item, true);
+        }
+
+        public override bool RemoveItemWithoutDbDeletion(DbInventoryItem item)
+        {
+            return RemoveItem(item, false);
+        }
+
+        private bool RemoveItem(DbInventoryItem item, bool markForDeletion)
+        {
+            if (item == null)
+                return false;
+
+            if (item.OwnerID != m_player.InternalID)
+            {
+                if (Log.IsErrorEnabled)
+                    Log.Error($"{m_player.Name} tried to remove item with wrong owner ({item})\n{Environment.StackTrace}");
+
+                return false;
+            }
+
+            eInventorySlot oldSlot = (eInventorySlot) item.SlotPosition;
+
+            if (!base.RemoveItem(item))
+                return false;
+
+            if (markForDeletion)
+            {
+                bool canPersist = true;
+
+                if (item is GameInventoryItem gameItem)
+                    canPersist = gameItem.CanPersist;
+
+                // Only add the item to our items awaiting deletion list if it was actually added to the database.
+                if (canPersist && item.IsPersisted)
+                    _itemsAwaitingDeletion.Add(item);
+            }
+
+            m_player.TradeWindow?.RemoveItemToTrade(item);
+
+            // Check if it's a quiver first, since `IsEquippedSlot` would return true.
+            if (oldSlot is >= eInventorySlot.FirstQuiver and <= eInventorySlot.FourthQuiver)
+                m_player.SwitchQuiver(eActiveQuiverSlot.None, true);
+            else if (IsEquippedSlot(oldSlot))
+                m_player.OnItemUnequipped(item, oldSlot);
+
+            (item as IGameInventoryItem)?.OnLose(m_player);
+            return true;
+        }
+
+        public override bool AddCountToStack(DbInventoryItem item, int count)
+        {
+            if (item != null && item.OwnerID != m_player.InternalID)
+            {
+                if (Log.IsErrorEnabled)
+                    Log.Error("Item owner not equals inventory owner.\n" + Environment.StackTrace);
+
+                return false;
+            }
+
+            return base.AddCountToStack(item, count);
+        }
+
+        public override bool RemoveCountFromStack(DbInventoryItem item, int count)
+        {
+            if (item != null && item.OwnerID != m_player.InternalID)
+            {
+                if (Log.IsErrorEnabled)
+                    Log.Error("Item owner not equals inventory owner.\n" + Environment.StackTrace);
+
+                return false;
+            }
+
+            return base.RemoveCountFromStack(item, count);
+        }
+
+        #endregion Add/Remove
+
+        #region Get Inventory Informations
+
+        /// <summary>
+        /// Check if the slot is valid in this inventory
+        /// </summary>
+        /// <param name="slot">SlotPosition to check</param>
+        /// <returns>the slot if it's valid or eInventorySlot.Invalid if not</returns>
+        protected override eInventorySlot GetValidInventorySlot(eInventorySlot slot)
+        {
+            switch (slot)
+            {
+                case eInventorySlot.LastEmptyQuiver:
+                    slot = FindLastEmptySlot(eInventorySlot.FirstQuiver, eInventorySlot.FourthQuiver);
+                    break;
+                case eInventorySlot.FirstEmptyQuiver:
+                    slot = FindFirstEmptySlot(eInventorySlot.FirstQuiver, eInventorySlot.FourthQuiver);
+                    break;
+                case eInventorySlot.LastEmptyVault:
+                    slot = FindLastEmptySlot(eInventorySlot.FirstVault, eInventorySlot.LastVault);
+                    break;
+                case eInventorySlot.FirstEmptyVault:
+                    slot = FindFirstEmptySlot(eInventorySlot.FirstVault, eInventorySlot.LastVault);
+                    break;
+                case eInventorySlot.LastEmptyBackpack:
+                    slot = FindLastEmptySlot(eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
+                    break;
+                case eInventorySlot.FirstEmptyBackpack:
+                    slot = FindFirstEmptySlot(eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
+                    break;
+                    // INVENTAIRE DES CHEVAUX
+                case eInventorySlot.LastEmptyBagHorse:
+                    slot = FindLastEmptySlot(eInventorySlot.FirstBagHorse, eInventorySlot.LastBagHorse);
+                    break;
+                case eInventorySlot.FirstEmptyBagHorse:
+                    slot = FindFirstEmptySlot(eInventorySlot.FirstBagHorse, eInventorySlot.LastBagHorse);
+                    break;
+            }
+
+            if ((slot >= eInventorySlot.FirstBackpack && slot <= eInventorySlot.LastBackpack)
+                //				|| ( slot >= eInventorySlot.Mithril && slot <= eInventorySlot.Copper ) // can't place items in money slots, is it?
+                || (slot >= eInventorySlot.HorseArmor && slot <= eInventorySlot.Horse)
+                || (slot >= eInventorySlot.FirstVault && slot <= eInventorySlot.LastVault)
+                || (slot >= eInventorySlot.HouseVault_First && slot <= eInventorySlot.HouseVault_Last)
+                || (slot >= eInventorySlot.Consignment_First && slot <= eInventorySlot.Consignment_Last)
+                || (slot == eInventorySlot.Mythical)
+                // INVENTAIRE DES CHEVAUX
+                || (slot >= eInventorySlot.FirstBagHorse && slot <= eInventorySlot.LastBagHorse))
+                return slot;
+
+
+            return base.GetValidInventorySlot(slot);
+        }
+
+        #endregion Get Inventory Informations
+
+        #region Move Item
+
+        public override bool MoveItem(eInventorySlot fromSlot, eInventorySlot toSlot, int itemCount)
+        {
+            if (!CheckPlayerState())
+                return false;
+
+            DbInventoryItem fromItem;
+            DbInventoryItem toItem;
+            bool moved;
+
+            lock (Lock)
+            {
+                if (!GetValidInventorySlot(ref fromSlot) || !GetValidInventorySlot(ref toSlot))
+                    return false;
+
+                // Just change active weapon if placed in same slot.
+                if (fromSlot == toSlot)
+                {
+                    switch (toSlot)
+                    {
+                        case eInventorySlot.RightHandWeapon:
+                        case eInventorySlot.LeftHandWeapon:
+                        {
+                            m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
+                            return false;
+                        }
+                        case eInventorySlot.TwoHandWeapon:
+                        {
+                            m_player.SwitchWeapon(eActiveWeaponSlot.TwoHanded);
+                            return false;
+                        }
+                        case eInventorySlot.DistanceWeapon:
+                        {
+                            m_player.SwitchWeapon(eActiveWeaponSlot.Distance);
+                            return false;
                         }
                     }
                 }
 
-                if (valid && toItem != null && !string.IsNullOrEmpty(toItem.AllowedClasses))
+                m_items.TryGetValue(fromSlot, out fromItem);
+                m_items.TryGetValue(toSlot, out toItem);
+
+                if (fromItem == toItem || fromItem == null)
                 {
+                    m_player.Out.SendInventorySlotsUpdate(null);
+                    return false;
+                }
 
-                    if (toSlot >= eInventorySlot.MaxEquipable)
-                        noactiveslot = true;
+                if (!CheckHorseInventoryRestrictions(fromSlot, toSlot))
+                    return false;
 
-                    if (!(fromSlot >= eInventorySlot.FirstBackpack && fromSlot <= eInventorySlot.LastBackpack) && !noactiveslot)
-                    // but we allow the player to switch the item inside his inventory (check only char slots)
+                if (!CheckPoisonApplication(fromItem, toItem))
+                    return false;
+
+                if (!CheckItemsRestrictions(fromItem, toItem, fromSlot, toSlot))
+                    return false;
+
+                moved = base.MoveItem(fromSlot, toSlot, itemCount);
+            }
+
+            if (!moved)
+                return false;
+
+            OnItemMove(fromItem, toItem, fromSlot, toSlot);
+            return true;
+        }
+
+        public override bool CheckItemsBeforeMovingFromOrToExternalInventory(DbInventoryItem fromItem, DbInventoryItem toItem, eInventorySlot externalSlot, eInventorySlot playerInventorySlot, int itemCount)
+        {
+            if (!CheckPlayerState())
+                return false;
+
+            lock (Lock)
+            {
+                if (!GetValidInventorySlot(ref playerInventorySlot))
+                    return false;
+
+                if (!CheckHorseInventoryRestrictions(externalSlot, playerInventorySlot))
+                    return false;
+
+                if (!CheckPoisonApplication(fromItem, toItem))
+                    return false;
+
+                if (!CheckItemsRestrictions(fromItem, toItem, externalSlot, playerInventorySlot))
+                    return false;
+            }
+
+            return true;
+        }
+
+        public override void OnItemMove(DbInventoryItem fromItem, DbInventoryItem toItem, eInventorySlot fromSlot, eInventorySlot toSlot)
+        {
+            CheckAttackStateChange(m_player, fromSlot, toSlot);
+            CheckTradeWindow(m_player, fromItem, toItem);
+            SwitchWeaponContextually(m_player, fromSlot, toSlot);
+
+            static void CheckAttackStateChange(GamePlayer player, eInventorySlot fromSlot, eInventorySlot toSlot)
+            {
+                if (fromSlot is (>= eInventorySlot.RightHandWeapon and <= eInventorySlot.DistanceWeapon) or (>= eInventorySlot.FirstQuiver and <= eInventorySlot.FourthQuiver) ||
+                    toSlot is (>= eInventorySlot.RightHandWeapon and <= eInventorySlot.DistanceWeapon) or (>= eInventorySlot.FirstQuiver and <= eInventorySlot.FourthQuiver))
+                {
+                    player.attackComponent.StopAttack();
+                }
+            }
+
+            static void CheckTradeWindow(GamePlayer player, DbInventoryItem fromItem, DbInventoryItem toItem)
+            {
+                ITradeWindow window = player.TradeWindow;
+
+                if (window != null)
+                {
+                    window.RemoveItemToTrade(toItem);
+                    window.RemoveItemToTrade(fromItem);
+                }
+            }
+
+            static void SwitchWeaponContextually(GamePlayer player, eInventorySlot fromSlot, eInventorySlot toSlot)
+            {
+                switch (toSlot)
+                {
+                    case eInventorySlot.RightHandWeapon:
                     {
-                        valid = false;
-                        foreach (string allowed in Util.SplitCSV(toItem.AllowedClasses, true))
+                        player.SwitchWeapon(eActiveWeaponSlot.Standard);
+                        break;
+                    }
+                    case eInventorySlot.TwoHandWeapon:
+                    {
+                        player.SwitchWeapon(eActiveWeaponSlot.TwoHanded);
+                        break;
+                    }
+                    case eInventorySlot.DistanceWeapon:
+                    {
+                        player.SwitchWeapon(eActiveWeaponSlot.Distance);
+                        break;
+                    }
+                    case eInventorySlot.LeftHandWeapon:
+                    {
+                        if (player.ActiveWeaponSlot is not eActiveWeaponSlot.Distance)
+                            player.SwitchWeapon(player.ActiveWeaponSlot);
+                        else
+                            player.SwitchWeapon(eActiveWeaponSlot.Standard);
+
+                        break;
+                    }
+                    case eInventorySlot.FirstQuiver:
+                    {
+                        player.SwitchQuiver(eActiveQuiverSlot.First, true);
+                        break;
+                    }
+                    case eInventorySlot.SecondQuiver:
+                    {
+                        player.SwitchQuiver(eActiveQuiverSlot.Second, true);
+                        break;
+                    }
+                    case eInventorySlot.ThirdQuiver:
+                    {
+                        player.SwitchQuiver(eActiveQuiverSlot.Third, true);
+                        break;
+                    }
+                    case eInventorySlot.FourthQuiver:
+                    {
+                        player.SwitchQuiver(eActiveQuiverSlot.Fourth, true);
+                        break;
+                    }
+                    default:
+                    {
+                        // A swap leaves the weapon slot occupied by the item that came from `toSlot`, so the active
+                        // weapon slot must be kept and refreshed to point at the new item instead of being abandoned.
+                        bool weaponSlotStillOccupied = player.Inventory.GetItem(fromSlot) != null;
+
+                        switch (fromSlot)
                         {
-                            if (m_player.CharacterClass.ID.ToString() == allowed || m_player.Client.Account.PrivLevel > 1)
+                            case eInventorySlot.RightHandWeapon:
                             {
-                                valid = true;
+                                if (player.ActiveWeaponSlot is eActiveWeaponSlot.Standard)
+                                    player.SwitchWeapon(weaponSlotStillOccupied ? eActiveWeaponSlot.Standard : eActiveWeaponSlot.TwoHanded);
+
+                                break;
+                            }
+                            case eInventorySlot.TwoHandWeapon:
+                            {
+                                if (player.ActiveWeaponSlot is eActiveWeaponSlot.TwoHanded)
+                                    player.SwitchWeapon(weaponSlotStillOccupied ? eActiveWeaponSlot.TwoHanded : eActiveWeaponSlot.Standard);
+
+                                break;
+                            }
+                            case eInventorySlot.DistanceWeapon:
+                            {
+                                if (player.ActiveWeaponSlot is eActiveWeaponSlot.Distance)
+                                    player.SwitchWeapon(weaponSlotStillOccupied ? eActiveWeaponSlot.Distance : eActiveWeaponSlot.Standard);
+
+                                break;
+                            }
+                            case eInventorySlot.LeftHandWeapon:
+                            {
+                                if (player.ActiveWeaponSlot is eActiveWeaponSlot.TwoHanded or eActiveWeaponSlot.Standard)
+                                    player.SwitchWeapon(player.ActiveWeaponSlot);
+
                                 break;
                             }
                         }
 
-                        if (!valid)
-                        {
-                            m_player.Out.SendMessage("Your class cannot use this item!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                        }
+                        if (fromSlot is >= eInventorySlot.FirstQuiver and <= eInventorySlot.FourthQuiver)
+                            player.SwitchQuiver(eActiveQuiverSlot.None, true);
+
+                        break;
                     }
                 }
+            }
+        }
 
-				if (valid)
-				{
-					switch (toSlot)
-					{
-							//Andraste - Vico : Mythical
-						case eInventorySlot.Mythical:
-							if (fromItem.Item_Type != (int) eInventorySlot.Mythical)
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
+        private bool GetValidInventorySlot(ref eInventorySlot slot)
+        {
+            slot = GetValidInventorySlot(slot);
 
-							if (valid && fromItem.Type_Damage > m_player.ChampionLevel)
-							{
-								valid = false;
-								m_player.Out.SendMessage(
-									"You can't use " + fromItem.GetName(0, true) + " , you should increase your champion level.",
-									eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-							//horse slots
-						case eInventorySlot.HorseBarding:
-							if (fromItem.Item_Type != (int) eInventorySlot.HorseBarding)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + fromItem.GetName(0, true) + " in your active barding slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.HorseArmor:
-							if (fromItem.Item_Type != (int) eInventorySlot.HorseArmor)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + fromItem.GetName(0, true) + " in your active horse armor slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.Horse:
-							if (fromItem.Item_Type != (int) eInventorySlot.Horse)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + fromItem.GetName(0, true) + " in your active mount slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-							//weapon slots
-						case eInventorySlot.RightHandWeapon:
-							if (fromItem.Object_Type == (int) eObjectType.Shield //shield can't be used in right hand slot
-							    ||
-							    (fromItem.Item_Type != (int) eInventorySlot.RightHandWeapon
-							     //right hand weapons can be used in right hand slot
-							     && fromItem.Item_Type != (int) eInventorySlot.LeftHandWeapon))
-								//left hand weapons can be used in right hand slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(fromItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.TwoHandWeapon:
-							if (fromItem.Object_Type == (int) eObjectType.Shield //shield can't be used in 2h slot
-							    || (fromItem.Item_Type != (int) eInventorySlot.RightHandWeapon //right hand weapons can be used in 2h slot
-							        && fromItem.Item_Type != (int) eInventorySlot.LeftHandWeapon //left hand weapons can be used in 2h slot
-							        && fromItem.Item_Type != (int) eInventorySlot.TwoHandWeapon //2h weapons can be used in 2h slot
-							        && fromItem.Object_Type != (int) eObjectType.Instrument)) //instruments can be used in 2h slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(fromItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftHandWeapon:
-							if (fromItem.Item_Type != (int) toSlot ||
-							    (fromItem.Object_Type != (int) eObjectType.Shield && !m_player.attackComponent.CanUseLefthandedWeapon))
-								//shield can be used only in left hand slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(fromItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.DistanceWeapon:
-							//m_player.Out.SendDebugMessage("From: {0} to {1} ItemType={2}",fromSlot,toSlot,fromItem.Item_Type);
-							if (fromItem.Item_Type != (int) toSlot && fromItem.Object_Type != (int) eObjectType.Instrument)
-								//instruments can be used in ranged slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(fromItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
+            if (slot != eInventorySlot.Invalid)
+                return true;
 
-							//armor slots
-						case eInventorySlot.HeadArmor:
-						case eInventorySlot.HandsArmor:
-						case eInventorySlot.FeetArmor:
-						case eInventorySlot.TorsoArmor:
-						case eInventorySlot.LegsArmor:
-						case eInventorySlot.ArmsArmor:
-							if (fromItem.Item_Type != (int) toSlot)
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(fromItem.Template ))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in wearing this armor type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
+            ChatUtil.SendDebugMessage(m_player, $"Invalid slot: {slot}.");
+            m_player.Out.SendInventorySlotsUpdate(null);
+            return false;
+        }
 
-						case eInventorySlot.Jewellery:
-						case eInventorySlot.Cloak:
-						case eInventorySlot.Neck:
-						case eInventorySlot.Waist:
-							if (fromItem.Item_Type != (int) toSlot)
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftBracer:
-						case eInventorySlot.RightBracer:
-							if (fromItem.Item_Type != Slot.RIGHTWRIST && fromItem.Item_Type != Slot.LEFTWRIST)
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftRing:
-						case eInventorySlot.RightRing:
-							if (fromItem.Item_Type != Slot.LEFTRING && fromItem.Item_Type != Slot.RIGHTRING)
-							{
-								valid = false;
-								m_player.Out.SendMessage(fromItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.FirstQuiver:
-						case eInventorySlot.SecondQuiver:
-						case eInventorySlot.ThirdQuiver:
-						case eInventorySlot.FourthQuiver:
-							if (fromItem.Object_Type != (int) eObjectType.Arrow && fromItem.Object_Type != (int) eObjectType.Bolt)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put your " + fromItem.Name + " in your quiver!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-					}
-					//"The Lute of the Initiate must be readied in the 2-handed slot!"
-				}
+        private bool CheckPlayerState()
+        {
+            if (m_player.IsAlive)
+                return true;
 
-				if (valid && (fromItem.Realm > 0 && (int) m_player.Realm != fromItem.Realm) &&
-				    (toSlot >= eInventorySlot.HorseArmor && toSlot <= eInventorySlot.HorseBarding))
-				{
-					if (m_player.Client.Account.PrivLevel == 1)
-					{
-						valid = false;
-					}
+            m_player.Out.SendMessage("You can't change your inventory when dead!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            m_player.Out.SendInventorySlotsUpdate(null);
+            return false;
+        }
 
-					m_player.Out.SendMessage("You cannot put an item from this realm!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				}
+        private bool CheckHorseInventoryRestrictions(eInventorySlot fromSlot, eInventorySlot toSlot)
+        {
+            if (toSlot is not >= eInventorySlot.FirstBagHorse or not <= eInventorySlot.LastBagHorse && fromSlot is not >= eInventorySlot.FirstBagHorse or not <= eInventorySlot.LastBagHorse)
+                return true;
 
-				if (valid && toItem != null)
-				{
-					switch (fromSlot)
-					{
-							//Andraste
-						case eInventorySlot.Mythical:
-							if (toItem.Item_Type != (int) eInventorySlot.Mythical)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
+            // Don't let player move active horse to a horse bag, which will disable all bags!
+            if (fromSlot == eInventorySlot.Horse)
+                m_player.Out.SendMessage("You can't move your active horse into a saddlebag!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            else if (m_player.Client.Account.PrivLevel != 1 || (m_player.CanUseHorseInventorySlot((int) fromSlot) && m_player.CanUseHorseInventorySlot((int) toSlot)))
+                return true;
 
-							if (valid && toItem.Type_Damage > m_player.ChampionLevel)
-							{
-								valid = false;
-								m_player.Out.SendMessage(
-									"You can't use " + toItem.GetName(0, true) + " , you should increase your champion level.", eChatType.CT_System,
-									eChatLoc.CL_SystemWindow);
-							}
-							break;
-							//horse slots
-						case eInventorySlot.HorseBarding:
-							if (toItem.Item_Type != (int) eInventorySlot.HorseBarding)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + toItem.GetName(0, true) + " in your active barding slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.HorseArmor:
-							if (toItem.Item_Type != (int) eInventorySlot.HorseArmor)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + toItem.GetName(0, true) + " in your active horse armor slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.Horse:
-							if (toItem.Item_Type != (int) eInventorySlot.Horse)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put " + toItem.GetName(0, true) + " in your active mount slot!",
-								                         eChatType.CT_System, eChatLoc.CL_SystemWindow);
-							}
-							break;
-							//weapon slots
-						case eInventorySlot.RightHandWeapon:
-							if (toItem.Object_Type == (int) eObjectType.Shield //shield can't be used in right hand slot
-							    ||
-							    (toItem.Item_Type != (int) eInventorySlot.RightHandWeapon //right hand weapons can be used in right hand slot
-							     && toItem.Item_Type != (int) eInventorySlot.LeftHandWeapon))
-								//left hand weapons can be used in right hand slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(toItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.TwoHandWeapon:
-							if (toItem.Object_Type == (int) eObjectType.Shield //shield can't be used in 2h slot
-							    || (toItem.Item_Type != (int) eInventorySlot.RightHandWeapon //right hand weapons can be used in 2h slot
-							        && toItem.Item_Type != (int) eInventorySlot.LeftHandWeapon //left hand weapons can be used in 2h slot
-							        && toItem.Item_Type != (int) eInventorySlot.TwoHandWeapon //2h weapons can be used in 2h slot
-							        && toItem.Object_Type != (int) eObjectType.Instrument)) //instruments can be used in 2h slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(toItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftHandWeapon:
-							if (toItem.Item_Type != (int) fromSlot ||
-							    (toItem.Object_Type != (int) eObjectType.Shield && !m_player.attackComponent.CanUseLefthandedWeapon))
-								//shield can be used only in left hand slot
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(toItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.DistanceWeapon:
-							if (toItem.Item_Type != (int) fromSlot && toItem.Object_Type != (int) eObjectType.Instrument)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(toItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
+            m_player.Out.SendInventorySlotsUpdate(null);
+            return false;
+        }
 
-							//armor slots
-						case eInventorySlot.HeadArmor:
-						case eInventorySlot.HandsArmor:
-						case eInventorySlot.FeetArmor:
-						case eInventorySlot.TorsoArmor:
-						case eInventorySlot.LegsArmor:
-						case eInventorySlot.ArmsArmor:
-							if (toItem.Item_Type != (int) fromSlot)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							else if (!m_player.HasAbilityToUseItem(toItem.Template))
-							{
-								valid = false;
-								m_player.Out.SendMessage("You have no skill in wearing this armor type!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
+        private bool CheckPoisonApplication(DbInventoryItem fromItem, DbInventoryItem toItem)
+        {
+            if (toItem == null || (eObjectType) fromItem.Object_Type != eObjectType.Poison || !GlobalConstants.IsWeapon(toItem.Object_Type))
+                return true;
 
-						case eInventorySlot.Jewellery:
-						case eInventorySlot.Cloak:
-						case eInventorySlot.Neck:
-						case eInventorySlot.Waist:
-							if (toItem.Item_Type != (int) fromSlot)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftBracer:
-						case eInventorySlot.RightBracer:
-							if (toItem.Item_Type != Slot.RIGHTWRIST && toItem.Item_Type != Slot.LEFTWRIST)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.LeftRing:
-						case eInventorySlot.RightRing:
-							if (toItem.Item_Type != Slot.LEFTRING && toItem.Item_Type != Slot.RIGHTRING)
-							{
-								valid = false;
-								m_player.Out.SendMessage(toItem.GetName(0, true) + " can't go there!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-						case eInventorySlot.FirstQuiver:
-						case eInventorySlot.SecondQuiver:
-						case eInventorySlot.ThirdQuiver:
-						case eInventorySlot.FourthQuiver:
-							if (toItem.Object_Type != (int) eObjectType.Arrow && toItem.Object_Type != (int) eObjectType.Bolt)
-							{
-								valid = false;
-								m_player.Out.SendMessage("You can't put your " + toItem.Name + " in your quiver!", eChatType.CT_System,
-								                         eChatLoc.CL_SystemWindow);
-							}
-							break;
-					}
-				}
+            m_player.ApplyPoison(fromItem, toItem);
+            m_player.Out.SendInventorySlotsUpdate(null);
+            return false;
+        }
 
-				if (valid)
-				{
-					base.MoveItem(fromSlot, toSlot, itemCount);
-				}
-			}
+        private bool CheckItemsRestrictions(DbInventoryItem fromItem, DbInventoryItem toItem, eInventorySlot fromSlot, eInventorySlot toSlot)
+        {
+            if (CheckItemClassRestriction(fromItem, toSlot) &&
+                CheckItemClassRestriction(toItem, fromSlot) &&
+                CheckItemRealmRestriction(fromItem, toSlot) &&
+                CheckItemRealmRestriction(toItem, fromSlot) &&
+                CheckItemSlotRestriction(fromItem, toSlot) &&
+                CheckItemSlotRestriction(toItem, fromSlot))
+            {
+                return true;
+            }
 
-			if (valid)
-			{
-				foreach (eInventorySlot updatedSlot in updatedSlots)
-				{
-					if ((updatedSlot >= eInventorySlot.RightHandWeapon && updatedSlot <= eInventorySlot.DistanceWeapon)
-					    || (updatedSlot >= eInventorySlot.FirstQuiver && updatedSlot <= eInventorySlot.FourthQuiver))
-					{
-						m_player.attackComponent.StopAttack();
-						break;
-					}
-				}
+            m_player.Out.SendInventorySlotsUpdate(null);
+            return false;
+        }
 
-				ITradeWindow window = m_player.TradeWindow;
-				if (window != null)
-				{
-					if (toItem != null)
-						window.RemoveItemToTrade(toItem);
-					window.RemoveItemToTrade(fromItem);
-				}
+        private bool CheckItemRealmRestriction(DbInventoryItem item, eInventorySlot slot)
+        {
+            if (item == null || item.Realm <= 0 || (eRealm) item.Realm == m_player.Realm || m_player.Client.Account.PrivLevel > 1)
+                return true;
 
+            if (slot is > eInventorySlot.MaxEquipable or (>= eInventorySlot.FirstBackpack and <= eInventorySlot.LastBackpack) or eInventorySlot.HorseArmor or eInventorySlot.HorseBarding)
+                return true;
 
-				// activate weapon slot if moved to it
-				switch (toSlot)
-				{
-					case eInventorySlot.RightHandWeapon:
-						m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-						break;
-					case eInventorySlot.TwoHandWeapon:
-						m_player.SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-						break;
-					case eInventorySlot.DistanceWeapon:
-						m_player.SwitchWeapon(eActiveWeaponSlot.Distance);
-						break;
-					case eInventorySlot.LeftHandWeapon:
-						if (m_player.ActiveWeaponSlot != eActiveWeaponSlot.Distance)
-							m_player.SwitchWeapon(m_player.ActiveWeaponSlot);
-						else m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-						break;
-					case eInventorySlot.FirstQuiver:
-						m_player.SwitchQuiver(eActiveQuiverSlot.First, true);
-						break;
-					case eInventorySlot.SecondQuiver:
-						m_player.SwitchQuiver(eActiveQuiverSlot.Second, true);
-						break;
-					case eInventorySlot.ThirdQuiver:
-						m_player.SwitchQuiver(eActiveQuiverSlot.Third, true);
-						break;
-					case eInventorySlot.FourthQuiver:
-						m_player.SwitchQuiver(eActiveQuiverSlot.Fourth, true);
-						break;
+            m_player.Out.SendMessage("You cannot equip an item from another realm!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            return false;
+        }
 
+        private bool CheckItemClassRestriction(DbInventoryItem item, eInventorySlot slot)
+        {
+            if (item == null || string.IsNullOrEmpty(item.AllowedClasses) || m_player.Client.Account.PrivLevel > 1)
+                return true;
 
-					default:
-						// change active weapon if moved from active slot
-						if (fromSlot == eInventorySlot.RightHandWeapon &&
-						    m_player.ActiveWeaponSlot == eActiveWeaponSlot.Standard)
-						{
-							m_player.SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-						}
-						else if (fromSlot == eInventorySlot.TwoHandWeapon &&
-						         m_player.ActiveWeaponSlot == eActiveWeaponSlot.TwoHanded)
-						{
-							m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-						}
-						else if (fromSlot == eInventorySlot.DistanceWeapon &&
-						         m_player.ActiveWeaponSlot == eActiveWeaponSlot.Distance)
-						{
-							m_player.SwitchWeapon(eActiveWeaponSlot.Standard);
-						}
-						else if (fromSlot == eInventorySlot.LeftHandWeapon &&
-						         (m_player.ActiveWeaponSlot == eActiveWeaponSlot.TwoHanded ||
-						          m_player.ActiveWeaponSlot == eActiveWeaponSlot.Standard))
-						{
-							m_player.SwitchWeapon(m_player.ActiveWeaponSlot);
-						}
+            if (slot is > eInventorySlot.MaxEquipable or (>= eInventorySlot.FirstBackpack and <= eInventorySlot.LastBackpack))
+                return true;
 
-						if (fromSlot >= eInventorySlot.FirstQuiver && fromSlot <= eInventorySlot.FourthQuiver)
-						{
-							m_player.SwitchQuiver(eActiveQuiverSlot.None, true);
-						}
+            foreach (string allowed in Util.SplitCSV(item.AllowedClasses, true))
+            {
+                if (m_player.CharacterClass.ID == int.Parse(allowed))
+                    return true;
+            }
 
-						break;
-				}
-			}
+            m_player.Out.SendMessage("Your class cannot use this item!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+            return false;
+        }
 
-			m_player.Out.SendInventorySlotsUpdate(null);
+        private bool CheckItemSlotRestriction(DbInventoryItem item, eInventorySlot slot)
+        {
+            if (item == null)
+                return true;
 
-			return valid;
-		}
+            switch (slot)
+            {
+                case eInventorySlot.Mythical:
+                {
+                    if ((eInventorySlot) item.Item_Type is not eInventorySlot.Mythical)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-		#endregion Move Item
+                    if (item.Type_Damage > m_player.ChampionLevel)
+                    {
+                        m_player.Out.SendMessage($"You can't use {item.GetName(0, true)}, you should increase your champion level.", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-		#region Combine/Exchange/Stack Items
+                    break;
+                }
+                case eInventorySlot.HorseBarding:
+                {
+                    if ((eInventorySlot) item.Item_Type is not eInventorySlot.HorseBarding)
+                    {
+                        m_player.Out.SendMessage($"You can't put {item.GetName(0, true)} in your active barding slot!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-		/// <summary>
-		/// Combine 2 items together if possible
-		/// </summary>
-		/// <param name="fromItem">First Item</param>
-		/// <param name="toItem">Second Item</param>
-		/// <returns>true if items combined successfully</returns>
-		protected override bool CombineItems(DbInventoryItem fromItem, DbInventoryItem toItem)
-		{
-			if (toItem == null ||
-			    fromItem.SlotPosition < (int) eInventorySlot.FirstBackpack ||
-			    fromItem.SlotPosition > (int) eInventorySlot.LastBackpack)
-				return false;
+                    break;
+                }
+                case eInventorySlot.HorseArmor:
+                {
+                    if ((eInventorySlot) item.Item_Type is not eInventorySlot.HorseArmor)
+                    {
+                        m_player.Out.SendMessage($"You can't put {item.GetName(0, true)} in your active horse armor slot!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			if (fromItem is IGameInventoryItem)
-			{
-				if ((fromItem as IGameInventoryItem).Combine(m_player, toItem))
-				{
-					return true;
-				}
-			}
+                    break;
+                }
+                case eInventorySlot.Horse:
+                {
+                    if ((eInventorySlot) item.Item_Type is not eInventorySlot.Horse)
+                    {
+                        m_player.Out.SendMessage($"You can't put {item.GetName(0, true)} in your active mount slot!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			//Is the fromItem a dye or dyepack?
-			//TODO shouldn't be done with model check
-			switch (fromItem.Model)
-			{
-				case 229:
-				case 494:
-				case 495:
-				case 538:
-					return DyeItem(fromItem, toItem);
-			}
+                    break;
+                }
+                case eInventorySlot.RightHandWeapon:
+                {
+                    if ((eObjectType) item.Object_Type is eObjectType.Shield ||
+                        ((eInventorySlot) item.Item_Type is not eInventorySlot.RightHandWeapon and not eInventorySlot.LeftHandWeapon))
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
+                    else if (!m_player.HasAbilityToUseItem(item.Template))
+                    {
+                        m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			return false;
-		}
+                    break;
+                }
+                case eInventorySlot.TwoHandWeapon:
+                {
+                    if ((eObjectType) item.Object_Type is eObjectType.Shield ||
+                        ((eInventorySlot) item.Item_Type is not eInventorySlot.RightHandWeapon and not eInventorySlot.LeftHandWeapon and not eInventorySlot.TwoHandWeapon && (eObjectType) item.Object_Type is not eObjectType.Instrument))
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
+                    else if (!m_player.HasAbilityToUseItem(item.Template))
+                    {
+                        m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-		/// <summary>
-		/// Stack an item with another one
-		/// </summary>
-		/// <param name="fromSlot">First SlotPosition</param>
-		/// <param name="toSlot">Second SlotPosition</param>
-		/// <param name="itemCount">How many items to move</param>
-		/// <returns>true if items stacked successfully</returns>
-		protected override bool StackItems(eInventorySlot fromSlot, eInventorySlot toSlot, int itemCount)
-		{
-			DbInventoryItem fromItem;
-			DbInventoryItem toItem;
+                    break;
+                }
+                case eInventorySlot.LeftHandWeapon:
+                {
+                    if ((eInventorySlot) item.Item_Type != slot ||
+                        ((eObjectType) item.Object_Type is not eObjectType.Shield && !m_player.attackComponent.CanUseLefthandedWeapon))
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
+                    else if (!m_player.HasAbilityToUseItem(item.Template))
+                    {
+                        m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			m_items.TryGetValue(fromSlot, out fromItem);
-			m_items.TryGetValue(toSlot, out toItem);
+                    break;
+                }
+                case eInventorySlot.DistanceWeapon:
+                {
+                    if ((eInventorySlot) item.Item_Type != slot && (eObjectType) item.Object_Type is not eObjectType.Instrument)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
+                    else if (!m_player.HasAbilityToUseItem(item.Template))
+                    {
+                        m_player.Out.SendMessage("You have no skill in using this weapon type!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			if ((toSlot > eInventorySlot.HorseArmor && toSlot < eInventorySlot.FirstQuiver)
-			    || (toSlot > eInventorySlot.FourthQuiver && toSlot < eInventorySlot.FirstBackpack))
-				return false;
+                    break;
+                }
+                case eInventorySlot.HeadArmor:
+                case eInventorySlot.HandsArmor:
+                case eInventorySlot.FeetArmor:
+                case eInventorySlot.TorsoArmor:
+                case eInventorySlot.LegsArmor:
+                case eInventorySlot.ArmsArmor:
+                {
+                    if ((eInventorySlot) item.Item_Type != slot)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
+                    else if (!m_player.HasAbilityToUseItem(item.Template))
+                    {
+                        m_player.Out.SendMessage("You have no skill in wearing this armor type!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			if (itemCount == 0)
-			{
-				itemCount = fromItem.Count > 0 ? fromItem.Count : 1;
-			}
+                    break;
+                }
+                case eInventorySlot.Jewelry:
+                case eInventorySlot.Cloak:
+                case eInventorySlot.Neck:
+                case eInventorySlot.Waist:
+                {
+                    if ((eInventorySlot) item.Item_Type != slot)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			if (toItem != null && toItem.IsStackable && toItem.Name.Equals(fromItem.Name))
-			{
-				if (fromItem.Count + toItem.Count > fromItem.MaxCount)
-				{
-					fromItem.Count -= (toItem.MaxCount - toItem.Count);
-					toItem.Count = toItem.MaxCount;
-				}
-				else
-				{
-					toItem.Count += fromItem.Count;
-					RemoveItem(fromItem);
-				}
+                    break;
+                }
+                case eInventorySlot.LeftBracer:
+                case eInventorySlot.RightBracer:
+                {
+                    if (item.Item_Type is not Slot.RIGHTWRIST and not Slot.LEFTWRIST)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-				return true;
-			}
+                    break;
+                }
+                case eInventorySlot.LeftRing:
+                case eInventorySlot.RightRing:
+                {
+                    if (item.Item_Type is not Slot.LEFTRING and not Slot.RIGHTRING)
+                    {
+                        m_player.Out.SendMessage($"{item.GetName(0, true)} can't go there!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-			if (toItem == null && fromItem.Count > itemCount)
-			{
-				var newItem = (DbInventoryItem) fromItem.Clone();
-				m_items[toSlot] = newItem;
-				newItem.Count = itemCount;
-				newItem.SlotPosition = (int) toSlot;
-				fromItem.Count -= itemCount;
-				newItem.AllowAdd = fromItem.Template.AllowAdd;
-				GameServer.Database.AddObject(newItem);
+                    break;
+                }
+                case eInventorySlot.FirstQuiver:
+                case eInventorySlot.SecondQuiver:
+                case eInventorySlot.ThirdQuiver:
+                case eInventorySlot.FourthQuiver:
+                {
+                    if ((eObjectType) item.Object_Type is not eObjectType.Arrow and not eObjectType.Bolt)
+                    {
+                        m_player.Out.SendMessage($"You can't put your {item.Name} in your quiver!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                        return false;
+                    }
 
-				return true;
-			}
+                    break;
+                }
+            }
 
-			return false;
-		}
+            return true;
+        }
 
-		/// <summary>
-		/// Exchange one item position with another one
-		/// </summary>
-		/// <param name="fromSlot">First SlotPosition</param>
-		/// <param name="toSlot">Second SlotPosition</param>
-		/// <returns>true if items exchanged successfully</returns>
-		protected override bool ExchangeItems(eInventorySlot fromSlot, eInventorySlot toSlot)
-		{
-			DbInventoryItem fromItem;
-			DbInventoryItem toItem;
+        #endregion Move Item
 
-			m_items.TryGetValue(fromSlot, out fromItem);
-			m_items.TryGetValue(toSlot, out toItem);
+        #region Combine/Exchange/Stack Items
 
-			bool fromSlotEquipped = IsEquippedSlot(fromSlot);
-			bool toSlotEquipped = IsEquippedSlot(toSlot);
+        /// <summary>
+        /// Combine 2 items together if possible
+        /// </summary>
+        /// <param name="fromItem">First Item</param>
+        /// <param name="toItem">Second Item</param>
+        /// <returns>true if items combined successfully</returns>
+        protected override bool CombineItems(DbInventoryItem fromItem, DbInventoryItem toItem)
+        {
+            if (toItem == null ||
+                fromItem.SlotPosition < (int) eInventorySlot.FirstBackpack ||
+                fromItem.SlotPosition > (int) eInventorySlot.LastBackpack)
+                return false;
 
-			if (base.ExchangeItems(fromSlot, toSlot) == false)
-			{
+            if (fromItem is IGameInventoryItem gameInventoryItem && gameInventoryItem.Combine(m_player, toItem))
+                return true;
 
-			}
+            //Is the fromItem a dye or dyepack?
+            //TODO shouldn't be done with model check
+            switch (fromItem.Model)
+            {
+                case 229:
+                case 494:
+                case 495:
+                case 538:
+                    return DyeItem(fromItem, toItem);
+            }
 
-			if (fromItem != null && fromItem.Id_nb != DbInventoryItem.BLANK_ITEM)
-			{
-				if (GameServer.Database.SaveObject(fromItem) == false)
-				{
-				}
-			}
-			if (toItem != null && toItem != fromItem && toItem.Id_nb != DbInventoryItem.BLANK_ITEM)
-			{
-				if (GameServer.Database.SaveObject(toItem) == false)
-				{
-				}
-			}
+            return false;
+        }
 
-			// notify handlers if items changing state
-			if (fromSlotEquipped != toSlotEquipped)
-			{
-				if (toItem != null)
-				{
-					if (toSlotEquipped) // item was equipped
-					{
-						m_player.Notify(PlayerInventoryEvent.ItemUnequipped, this, new ItemUnequippedArgs(toItem, toSlot));
-					}
-					else
-					{
-						m_player.Notify(PlayerInventoryEvent.ItemEquipped, this, new ItemEquippedArgs(toItem, toSlot));
-					}
-				}
+        /// <summary>
+        /// Stack an item with another one
+        /// </summary>
+        /// <param name="fromSlot">First SlotPosition</param>
+        /// <param name="toSlot">Second SlotPosition</param>
+        /// <param name="itemCount">How many items to move</param>
+        /// <returns>true if items stacked successfully</returns>
+        protected override bool StackItems(eInventorySlot fromSlot, eInventorySlot toSlot, int itemCount)
+        {
+            m_items.TryGetValue(fromSlot, out DbInventoryItem fromItem);
+            m_items.TryGetValue(toSlot, out DbInventoryItem toItem);
 
-				if (fromItem != null)
-				{
-					if (fromSlotEquipped) // item was equipped
-					{
-						m_player.Notify(PlayerInventoryEvent.ItemUnequipped, this, new ItemUnequippedArgs(fromItem, fromSlot));
-					}
-					else
-					{
-						m_player.Notify(PlayerInventoryEvent.ItemEquipped, this, new ItemEquippedArgs(fromItem, fromSlot));
-					}
-				}
-			}
+            if (toSlot is
+                (> eInventorySlot.HorseArmor and < eInventorySlot.FirstQuiver) or
+                (> eInventorySlot.FourthQuiver and < eInventorySlot.FirstBackpack))
+            {
+                return false;
+            }
 
-			return true;
-		}
+            if (itemCount == 0)
+                itemCount = fromItem.Count > 0 ? fromItem.Count : 1;
 
-		/// <summary>
-		/// Checks if slot is equipped on player
-		/// </summary>
-		/// <param name="slot">The slot to check</param>
-		/// <returns>true if slot is one of equipment slots and should add magical bonuses</returns>
-		public virtual bool IsEquippedSlot(eInventorySlot slot)
-		{
-			// skip weapons. only active weapons should fire equip event, done in player.SwitchWeapon
-			if (slot > eInventorySlot.DistanceWeapon || slot < eInventorySlot.RightHandWeapon)
-			{
-				foreach (eInventorySlot staticSlot in EQUIP_SLOTS)
-				{
-					if (slot == staticSlot)
-						return true;
-				}
+            if (toItem != null && toItem.IsStackable && toItem.Name.Equals(fromItem.Name))
+            {
+                if (fromItem.Count + toItem.Count > fromItem.MaxCount)
+                {
+                    fromItem.Count -= toItem.MaxCount - toItem.Count;
+                    toItem.Count = toItem.MaxCount;
+                }
+                else
+                {
+                    toItem.Count += fromItem.Count;
+                    RemoveItem(fromItem);
+                }
 
-				return false;
-			}
+                return true;
+            }
 
-			switch (slot)
-			{
-				case eInventorySlot.RightHandWeapon:
-					return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x00;
+            if (toItem != null || fromItem.Count <= itemCount)
+                return false;
 
-				case eInventorySlot.LeftHandWeapon:
-					return (m_player.VisibleActiveWeaponSlots & 0xF0) == 0x10;
+            DbInventoryItem newItem = fromItem.Clone() as DbInventoryItem;
+            m_items[toSlot] = newItem;
+            newItem.Count = itemCount;
+            newItem.SlotPosition = (int) toSlot;
+            fromItem.Count -= itemCount;
+            newItem.AllowAdd = fromItem.Template.AllowAdd;
+            return true;
+        }
 
-				case eInventorySlot.TwoHandWeapon:
-					return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x02;
+        /// <summary>
+        /// Exchange one item position with another one
+        /// </summary>
+        /// <param name="fromSlot">First SlotPosition</param>
+        /// <param name="toSlot">Second SlotPosition</param>
+        /// <returns>true if items exchanged successfully</returns>
+        protected override bool SwapItems(eInventorySlot fromSlot, eInventorySlot toSlot)
+        {
+            m_items.TryGetValue(fromSlot, out DbInventoryItem fromItem);
+            m_items.TryGetValue(toSlot, out DbInventoryItem toItem);
 
-				case eInventorySlot.DistanceWeapon:
-					return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x03;
-			}
+            bool fromSlotEquipped = IsEquippedSlot(fromSlot);
+            bool toSlotEquipped = IsEquippedSlot(toSlot);
 
-			return false;
-		}
+            if (!base.SwapItems(fromSlot, toSlot) || fromSlotEquipped == toSlotEquipped)
+                return false;
 
-		#endregion Combine/Exchange/Stack Items
+            if (toItem != null)
+            {
+                if (toSlotEquipped)
+                    m_player.OnItemUnequipped(toItem, toSlot);
+                else
+                    m_player.OnItemEquipped(toItem, toSlot);
+            }
 
-		#region Encumberance
-		
-		public override int InventoryWeight
-		{
-			get
-			{
-				var weight = 0;
-				IList<DbInventoryItem> items;
+            if (fromItem != null)
+            {
+                if (fromSlotEquipped)
+                    m_player.OnItemUnequipped(fromItem, fromSlot);
+                else
+                    m_player.OnItemEquipped(fromItem, fromSlot);
+            }
 
-				lock (m_items) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
-				{
-					items = new List<DbInventoryItem>(m_items.Values);
-				}
-				
-				foreach (var item in items)
-				{
-					if ((eInventorySlot) item.SlotPosition < eInventorySlot.FirstBackpack || (eInventorySlot)item.SlotPosition > eInventorySlot.LastBackpack)
-						continue;
-					var itemWeight = item.Weight;
-					if (item.Description.Contains("Atlas ROG")) itemWeight = (int)(itemWeight * 0.75);
-					weight += itemWeight;
-				}
-				
-				return weight/10 + base.InventoryWeight;;
-			}
-		}
+            return true;
+        }
 
-		#endregion
+        /// <summary>
+        /// Checks if slot is equipped on player
+        /// </summary>
+        /// <param name="slot">The slot to check</param>
+        /// <returns>true if slot is one of equipment slots and should add magical bonuses</returns>
+        public virtual bool IsEquippedSlot(eInventorySlot slot)
+        {
+            // skip weapons. only active weapons should fire equip event, done in player.SwitchWeapon
+            if (slot is > eInventorySlot.DistanceWeapon or < eInventorySlot.RightHandWeapon)
+                return EquipmentSlots.Contains(slot);
 
-		#region Dyes
+            switch (slot)
+            {
+                case eInventorySlot.RightHandWeapon:
+                    return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x00;
 
-		protected virtual bool DyeItem(DbInventoryItem dye, DbInventoryItem objectToDye)
-		{
-			bool canApply = false;
-			//TODO should not be tested via model
+                case eInventorySlot.LeftHandWeapon:
+                    return (m_player.VisibleActiveWeaponSlots & 0xF0) == 0x10;
 
-			int itemObjType = objectToDye.Object_Type;
-			int itemItemType = objectToDye.Item_Type;
+                case eInventorySlot.TwoHandWeapon:
+                    return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x02;
 
-			switch (dye.Model)
-			{
-				case 229: //Dyes
-					if (itemObjType == 32) //Cloth
-					{
-						canApply = true;
-					}
-					if (itemObjType == 41 && itemItemType == 26) // magical cloaks
-					{
-						canApply = true;
-					}
-					if (itemObjType == 41 && itemItemType == 8) // horse barding
-					{
-						canApply = true;
-					}
+                case eInventorySlot.DistanceWeapon:
+                    return (m_player.VisibleActiveWeaponSlots & 0x0F) == 0x03;
+            }
 
-					break;
-				case 494: //Dye pack
-					if (itemObjType == 33) //Leather
-					{
-						canApply = true;
-					}
-					break;
-				case 495: //Dye pack
-					if ((itemObjType == 42) // Shield
-					    || (itemObjType == 34) // Studded
-					    || (itemObjType == 35) // Chain
-					    || (itemObjType == 36) // Plate
-					    || (itemObjType == 37) // Reinforced
-					    || (itemObjType == 38) // Scale
-					    || (itemObjType == 45) // Instrument
-					    || ((itemObjType == 41) && (itemItemType == 7))) // horse saddle
-					{
-						canApply = true;
-					}
-					break;
-				case 538: //Dye pot
-					if (itemObjType >= 1 && itemObjType <= 26)
-					{
-						canApply = true;
-					}
-					break;
-			}
+            return false;
+        }
 
-			if (canApply)
-			{
-				objectToDye.Color = dye.Color;
-				objectToDye.Emblem = 0;
-				RemoveCountFromStack(dye, 1);
+        #endregion Combine/Exchange/Stack Items
+
+        #region Encumberance
+
+        private int _inventoryWeight;
+        protected bool _requiresInventoryWeightUpdate = true; // Must be set to true every time something happens in the player's inventory.
+        public override int InventoryWeight => _inventoryWeight;
+
+        public override bool UpdateInventoryWeight()
+        {
+            int newInventoryWeight = 0;
+
+            lock (Lock)
+            {
+                foreach (var pair in m_items)
+                {
+                    if (IsValidSlot(pair.Key))
+                        newInventoryWeight += pair.Value.Weight;
+                }
+
+                newInventoryWeight /= 10;
+
+                if (_inventoryWeight != newInventoryWeight)
+                {
+                    _inventoryWeight = newInventoryWeight;
+                    return true;
+                }
+            }
+
+            return false;
+
+            static bool IsValidSlot(eInventorySlot slot)
+            {
+                return slot is
+                    (>= eInventorySlot.FirstBackpack and <= eInventorySlot.LastBackpack) or
+                    (>= eInventorySlot.MinEquipable and <= eInventorySlot.MaxEquipable);
+            }
+        }
+
+        #endregion
+
+        #region Dyes
+
+        protected virtual bool DyeItem(DbInventoryItem dye, DbInventoryItem objectToDye)
+        {
+            bool canApply = false;
+            //TODO should not be tested via model
+
+            int itemObjType = objectToDye.Object_Type;
+            int itemItemType = objectToDye.Item_Type;
+
+            switch (dye.Model)
+            {
+                case 229: //Dyes
+                    if (itemObjType == 32) //Cloth
+                    {
+                        canApply = true;
+                    }
+                    if (itemObjType == 41 && itemItemType == 26) // magical cloaks
+                    {
+                        canApply = true;
+                    }
+                    if (itemObjType == 41 && itemItemType == 8) // horse barding
+                    {
+                        canApply = true;
+                    }
+
+                    break;
+                case 494: //Dye pack
+                    if (itemObjType == 33) //Leather
+                    {
+                        canApply = true;
+                    }
+                    break;
+                case 495: //Dye pack
+                    if ((itemObjType == 42) // Shield
+                        || (itemObjType == 34) // Studded
+                        || (itemObjType == 35) // Chain
+                        || (itemObjType == 36) // Plate
+                        || (itemObjType == 37) // Reinforced
+                        || (itemObjType == 38) // Scale
+                        || (itemObjType == 45) // Instrument
+                        || ((itemObjType == 41) && (itemItemType == 7))) // horse saddle
+                    {
+                        canApply = true;
+                    }
+                    break;
+                case 538: //Dye pot
+                    if (itemObjType >= 1 && itemObjType <= 26)
+                    {
+                        canApply = true;
+                    }
+                    break;
+            }
+
+            if (canApply)
+            {
+                objectToDye.Color = dye.Color;
+                objectToDye.Emblem = 0;
+                RemoveCountFromStack(dye, 1);
                 InventoryLogging.LogInventoryAction(m_player, "(dye)", eInventoryActionType.Other, dye.Template);
-			}
+            }
 
-			return canApply;
-		}
+            return canApply;
+        }
 
-		#endregion
+        #endregion
 
-		#region UpdateChangedSlots
+        #region UpdateChangedSlots
 
-		/// <summary>
-		/// Updates changed slots, inventory is already locked.
-		/// Inventory must be locked before invoking this method.
-		/// </summary>
-		protected override void UpdateChangedSlots()
-		{
-			
-			lock (m_changedSlots)
-			{
-				var invSlots = m_changedSlots.ToList();
-				var slotsToUpdate = new List<int>();
-				foreach (var inv in invSlots)
-				{
-					slotsToUpdate.Add((int)inv);
-				}
-				m_player.Out.SendInventorySlotsUpdate(slotsToUpdate);
-			}
+        /// <summary>
+        /// Updates changed slots, inventory is already locked.
+        /// Inventory must be locked before invoking this method.
+        /// </summary>
+        protected override void UpdateChangedSlots()
+        {
+            lock (Lock)
+            {
+                m_player.Out.SendInventorySlotsUpdate(m_changedSlots);
+            }
 
-			bool statsUpdated = false;
-			bool appearanceUpdated = false;
-			bool encumberanceUpdated = false;
+            UpdateInventoryWeight();
+            m_player.UpdateEncumbrance();
+            base.UpdateChangedSlots();
+        }
 
-			lock (InventorySlotLock)
-			{
-				foreach (eInventorySlot updatedSlot in m_changedSlots)
-				{
-					// update appearance if one of changed slots is visible
-					if (!appearanceUpdated)
-					{
-						foreach (eInventorySlot visibleSlot in VISIBLE_SLOTS)
-						{
-							if (updatedSlot != visibleSlot)
-								continue;
-							
-							appearanceUpdated = true;
-							break;
-						}
-					}
-
-					// update stats if equipped item has changed
-					if (!statsUpdated && updatedSlot <= eInventorySlot.RightRing &&
-					    updatedSlot >= eInventorySlot.RightHandWeapon)
-					{
-						statsUpdated = true;
-					}
-
-					// update encumberance if changed slot was in inventory or equipped
-					if (!encumberanceUpdated &&
-					    //					(updatedSlot >=(int)eInventorySlot.FirstVault && updatedSlot<=(int)eInventorySlot.LastVault) ||
-					    (updatedSlot >= eInventorySlot.RightHandWeapon && updatedSlot <= eInventorySlot.RightRing) ||
-					    (updatedSlot >= eInventorySlot.FirstBackpack && updatedSlot <= eInventorySlot.LastBackpack))
-					{
-						encumberanceUpdated = true;
-					}
-				}
-			}
-			
-			if(appearanceUpdated)
-				m_player.UpdateEquipmentAppearance();
-				
-			if(statsUpdated)
-				m_player.Out.SendUpdateWeaponAndArmorStats();
-				
-			if(encumberanceUpdated)
-				m_player.UpdateEncumberance();
-
-			base.UpdateChangedSlots();
-		}
-
-		#endregion
-	}
+        #endregion
+    }
 }

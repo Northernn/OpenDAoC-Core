@@ -22,36 +22,19 @@ namespace DOL.GS.Scripts
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(9913);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			MeleeDamageType = eDamageType.Crush;
 			Faction = FactionMgr.GetFactionByID(779);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
-			ScalingFactor = 60;
 			base.SetOwnBrain(new ThaneDyggveBrain());
 			LoadedFromScript = false; //load from database
 			SaveIntoDatabase();
 			base.AddToWorld();			
 			return true;
 		}	
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get
-			{ return 350;}
-			set{ }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -100,7 +83,7 @@ namespace DOL.GS.Scripts
 			private bool CanCastSpell = false;
 			public ThaneDyggveBrain() : base()
 			{
-				CanBAF = false;
+				CanBaf = false;
 				m_MjollnirAnnounce = new String[]
 				{
 					"You feel your energy draining and {0} summons powerful lightning hammers!",
@@ -150,7 +133,7 @@ namespace DOL.GS.Scripts
 			/// <param name="message">The message to be broadcast.</param>
 			public void BroadcastMessage(String message)
 			{
-				foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+				foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 				{
 					player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 				}
@@ -199,11 +182,10 @@ namespace DOL.GS.Scripts
 						spell.Damage = 500;
 						spell.DamageType = 12;
 						spell.SpellID = 3541;
-						spell.Target = "Enemy";
+						spell.Target = eSpellTarget.ENEMY.ToString();
 						spell.MoveCast = false;
 						spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 						m_Mjollnir = new Spell(spell, 50);
-						SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Mjollnir);
 					}
 					return m_Mjollnir;
 				}

@@ -18,7 +18,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-4
-    [SpellHandlerAttribute("UnmakeCrystalseed")]
+    [SpellHandler(eSpellType.UnmakeCrystalseed)]
     public class UnmakeCrystalseedSpellHandler : SpellHandler
     {
         /// <summary>
@@ -52,7 +52,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-5
-    [SpellHandlerAttribute("AncientTransmuter")]
+    [SpellHandler(eSpellType.AncientTransmuter)]
     public class AncientTransmuterSpellHandler : SpellHandler
     {
         private GameMerchant merchant;
@@ -95,9 +95,8 @@ namespace DOL.GS.Spells
                 merchant.Realm = casterPlayer.Realm;
                 merchant.Name = "Ancient Transmuter";
                 merchant.Model = 993;
-                merchant.CurrentSpeed = 0;
                 merchant.MaxSpeedBase = 0;
-                merchant.GuildName = "";
+                merchant.GuildName = string.Empty;
                 merchant.Size = 50;
                 merchant.Flags |= GameNPC.eFlags.PEACE;
                 merchant.TradeItems = new MerchantTradeItems("ML_transmuteritems");
@@ -108,7 +107,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-6
-    [SpellHandlerAttribute("Port")]
+    [SpellHandler(eSpellType.Port)]
     public class Port : MasterlevelHandling
     {
         // constructor
@@ -140,7 +139,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-7
-    [SpellHandlerAttribute("EssenceResist")]
+    [SpellHandler(eSpellType.EssenceResist)]
     public class EssenceResistHandler : AbstractResistBuff
     {
         public override eBuffBonusCategory BonusCategory1 { get { return eBuffBonusCategory.BaseBuff; } }
@@ -151,8 +150,8 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-8
-    [SpellHandlerAttribute("Zephyr")]
-    public class FZSpellHandler : MasterlevelHandling
+    [SpellHandler(eSpellType.Zephyr)]
+    public class FZSpellHandler : MasterlevelHandling, ILosCheckListener
     {
         protected ECSGameTimer m_expireTimer;
         protected GameNPC m_npc;
@@ -211,7 +210,7 @@ namespace DOL.GS.Spells
             npc.Flags |= GameNPC.eFlags.CANTTARGET;
             npc.SetOwnBrain(new ZephyrBrain(ArriveAtTarget));
             npc.AddToWorld();
-            npc.Follow(target, npc.movementComponent.FollowMinDistance, npc.movementComponent.FollowMaxDistance);
+            npc.Follow(target, npc.movementComponent.MinFollowDistance, npc.movementComponent.MaxFollowDistance);
             m_npc = npc;
             m_target = target;
             StartTimer();
@@ -227,7 +226,7 @@ namespace DOL.GS.Spells
         {
             m_target.IsStunned = false;
             m_target.DismountSteed(true);
-            m_target.DebuffCategory[(int)eProperty.SpellFumbleChance]-=100;
+            m_target.DebuffCategory[eProperty.SpellFumbleChance]-=100;
             GameEventMgr.RemoveHandler(m_target, GameLivingEvent.AttackedByEnemy, new DOLEventHandler(OnAttack));
             m_npc.StopMoving();
             m_npc.RemoveFromWorld();
@@ -273,7 +272,7 @@ namespace DOL.GS.Spells
                 return;
 
             playerTarget.IsStunned = true;
-            playerTarget.DebuffCategory[(int)eProperty.SpellFumbleChance]+=100;
+            playerTarget.DebuffCategory[eProperty.SpellFumbleChance]+=100;
             playerTarget.attackComponent.StopAttack();
             playerTarget.StopCurrentSpellcast();
             playerTarget.MountSteed(zephyr, true);
@@ -285,13 +284,13 @@ namespace DOL.GS.Spells
             {
                 //Calculate random target
                 m_loc = GetTargetLoc();
-                playerCaster.Out.SendCheckLos(playerCaster, m_npc, new CheckLosResponse(ZephyrCheckLos));
+                playerCaster.Out.SendLosCheckRequest(playerCaster, m_npc, this);
             }
         }
 
-        public void ZephyrCheckLos(GamePlayer player, eLosCheckResponse response, ushort sourceOID, ushort targetOID)
+        public void HandleLosCheckResponse(GamePlayer player, LosCheckResponse response, ushort targetId)
         {
-            if (response is eLosCheckResponse.TRUE)
+            if (response is LosCheckResponse.True)
                 m_npc.WalkTo(m_loc, 100);
         }
 
@@ -303,7 +302,7 @@ namespace DOL.GS.Spells
             return new Point3D((int)targetX, (int)targetY, m_npc.Z);
         }
 
-        public override int CalculateSpellResistChance(GameLiving target)
+        public override double CalculateSpellResistChance(GameLiving target)
         {
             return 0;
         }
@@ -314,7 +313,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-9
-    [SpellHandlerAttribute("Phaseshift")]
+    [SpellHandler(eSpellType.Phaseshift)]
     public class PhaseshiftHandler : MasterlevelHandling
     {
         private int endurance;
@@ -353,7 +352,7 @@ namespace DOL.GS.Spells
                 ad.Damage = 0;
                 ad.CriticalDamage = 0;
                 GamePlayer player = ad.Attacker as GamePlayer;
-                player.Out.SendMessage(living.Name + " is Phaseshifted and can't be attacked!", eChatType.CT_Missed, eChatLoc.CL_SystemWindow);
+                player.Out.SendMessage(living.Name + " is Phaseshifted and can't be attacked!", eChatType.CT_Action, eChatLoc.CL_SystemWindow);
             }
         }
 
@@ -371,7 +370,7 @@ namespace DOL.GS.Spells
             }
         }
 
-        public override int CalculateSpellResistChance(GameLiving target)
+        public override double CalculateSpellResistChance(GameLiving target)
         {
             return 0;
         }
@@ -383,7 +382,7 @@ namespace DOL.GS.Spells
 
     //no shared timer
     #region Sojourner-10
-    [SpellHandlerAttribute("Groupport")]
+    [SpellHandler(eSpellType.Groupport)]
     public class Groupport : MasterlevelHandling
     {
         public Groupport(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) { }

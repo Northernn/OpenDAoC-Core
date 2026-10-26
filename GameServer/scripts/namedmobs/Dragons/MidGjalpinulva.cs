@@ -73,7 +73,7 @@ namespace DOL.GS
 		}
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -110,12 +110,11 @@ namespace DOL.GS
 			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.KillsDragon++;
-				player.Achieve(AchievementUtils.AchievementNames.Dragon_Kills);
 				count++;
 			}
 			return count;
 		}
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
 		{
 				// debug
 				if (killer == null)
@@ -142,7 +141,7 @@ namespace DOL.GS
 				}
 
 				AwardDragonKillPoint();
-				base.Die(killer);
+				base.ProcessDeath(killer);
 				foreach (String message in m_deathAnnounce)
 				{
 					BroadcastMessage(String.Format(message, Name));
@@ -171,15 +170,8 @@ namespace DOL.GS
 
 			return base.HasAbility(keyName);
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 350;
@@ -208,19 +200,12 @@ namespace DOL.GS
 				base.StartAttack(target);
         }
 		private static Point3D spawnPoint = new Point3D(708888, 1021439, 3014);
-        public override ushort SpawnHeading { get => base.SpawnHeading; set => base.SpawnHeading = 2531; }
-        public override Point3D SpawnPoint { get => spawnPoint; set => base.SpawnPoint = spawnPoint; }
-        public override bool AddToWorld()
+		public override ushort SpawnHeading { get => 2531; set { } }
+		public override Point3D SpawnPoint { get => spawnPoint; set => base.SpawnPoint = spawnPoint; }
+		public override bool AddToWorld()
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(694189);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			#region All bools here
 			MidGjalpinulvaBrain.ResetChecks = false;
@@ -247,8 +232,7 @@ namespace DOL.GS
 			#endregion
 			MeleeDamageType = eDamageType.Crush;
 			Faction = FactionMgr.GetFactionByID(781);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(781));
-			MidGjalpinulvaBrain sbrain = new MidGjalpinulvaBrain();
+			MidGjalpinulvaBrain sbrain = new MidGjalpinulvaBrain(SpawnPoint);
 			SetOwnBrain(sbrain);
 			sbrain.Start();
 			LoadedFromScript = false;//load from database
@@ -261,7 +245,7 @@ namespace DOL.GS
 		{
 			if (enemy is GamePlayer player)
 			{
-				foreach (GamePlayer otherPlayer in ClientService.GetPlayersOfZone(CurrentZone))
+				foreach (GamePlayer otherPlayer in ClientService.Instance.GetPlayersOfZone(CurrentZone))
 					otherPlayer.Out.SendMessage($"{Name} shouts, 'Your soul now belongs to me, {player.CharacterClass.Name}!'", eChatType.CT_Say, eChatLoc.CL_ChatWindow);
 			}
 
@@ -275,14 +259,15 @@ namespace DOL.AI.Brain
 {
 	public class MidGjalpinulvaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-		public MidGjalpinulvaBrain()
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		public MidGjalpinulvaBrain(Point3D spawnPoint)
 			: base()
 		{
 			AggroLevel = 100;
 			AggroRange = 800;
 			ThinkInterval = 5000;
 			
+			_roamingPathPoints.Add(spawnPoint);
 			_roamingPathPoints.Add(new Point3D(712650, 1016043, 5106));
 			_roamingPathPoints.Add(new Point3D(710579, 1007943, 5106));
 			_roamingPathPoints.Add(new Point3D(703830, 998367, 5106));
@@ -310,7 +295,7 @@ namespace DOL.AI.Brain
 			_roamingPathPoints.Add(new Point3D(747080, 1023245, 5341));
 			_roamingPathPoints.Add(new Point3D(727530, 1027210, 5341));
 			_roamingPathPoints.Add(new Point3D(715303, 1025848, 5341));
-			_roamingPathPoints.Add(new Point3D(708888, 1021439, 3014));//spawn
+			_roamingPathPoints.Add(spawnPoint);
 		}
 		public static bool CanGlare = false;
 		public static bool CanGlare2 = false;
@@ -425,7 +410,7 @@ namespace DOL.AI.Brain
 				_lastRoamIndex = 0;
 				LockEndRoute = false;
 
-				foreach (GamePlayer player in ClientService.GetPlayersOfZone(Body.CurrentZone))
+				foreach (GamePlayer player in ClientService.Instance.GetPlayersOfZone(Body.CurrentZone))
 				{
 					player.Out.SendSoundEffect(2467, 0, 0, 0, 0, 0);//play sound effect for every player in boss currentregion
 					player.Out.SendMessage("A booming voice echoes through the canyons, 'I grow restless. Who has dared to enter my domain? I shall freeze their flesh and grind their bones to dust!'", eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
@@ -442,7 +427,7 @@ namespace DOL.AI.Brain
 			if (!ResetChecks && _lastRoamIndex >= _roamingPathPoints.Count)
 			{
 				IsRestless = false;//can roam again
-				Body.ReturnToSpawnPoint(400);//move dragon to spawn so he can attack again
+				FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN); //move dragon to spawn so he can attack again
 				Body.Flags = 0; //remove all flags
 				_lastRoamIndex = 0;
 				ResetChecks = true;//do it only once
@@ -490,7 +475,9 @@ namespace DOL.AI.Brain
 					CanSpawnMessengers = true;
                 }
 			}
-			base.Think();
+
+			if (!IsRestless)
+				base.Think();
 		}
         #region Dragon Roaming Path
         
@@ -504,8 +491,8 @@ namespace DOL.AI.Brain
 				if (Body.IsWithinRadius(_roamingPathPoints[_lastRoamIndex], 100))
 					_lastRoamIndex++;
 
-				if(_lastRoamIndex >= _roamingPathPoints.Count)
-					Body.ReturnToSpawnPoint(400);
+				if (_lastRoamIndex >= _roamingPathPoints.Count)
+					FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
 				else if(!Body.IsMoving)
 					Body.WalkTo(_roamingPathPoints[_lastRoamIndex], speed);
             }
@@ -518,7 +505,7 @@ namespace DOL.AI.Brain
 		List<GamePlayer> randomlyPickedPlayers = new List<GamePlayer>();
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -671,7 +658,7 @@ namespace DOL.AI.Brain
 						if (!GlareRoam_Enemys.Contains(player))
 							GlareRoam_Enemys.Add(player);
 
-						AggroList.TryAdd(player, new(100));
+						AddToAggroList(player);
 					}
 				}
 				if (GlareRoam_Enemys.Count > 0)
@@ -873,12 +860,11 @@ namespace DOL.AI.Brain
 					spell.Range = 5000;//very long range cause dragon is flying and got big aggro
 					spell.Radius = 1000;
 					spell.SpellID = 11954;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Cold;
 					m_Dragon_DD2 = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Dragon_DD2);
 				}
 				return m_Dragon_DD2;
 			}
@@ -902,12 +888,11 @@ namespace DOL.AI.Brain
 					spell.Range = 1500;
 					spell.Radius = 1000;
 					spell.SpellID = 11953;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Cold;
 					m_Dragon_DD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Dragon_DD);
 				}
 				return m_Dragon_DD;
 			}
@@ -931,12 +916,11 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Radius = 2000;
 					spell.SpellID = 11952;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Cold;
 					m_Dragon_PBAOE = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Dragon_PBAOE);
 				}
 				return m_Dragon_PBAOE;
 			}
@@ -960,12 +944,11 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Radius = 2000;
 					spell.SpellID = 11951;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.Stun.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Body;
 					m_Dragon_Stun = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Dragon_Stun);
 				}
 				return m_Dragon_Stun;
 			}
@@ -991,12 +974,11 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Radius = 2000;
 					spell.SpellID = 11964;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.ColdResistDebuff.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Cold;
 					m_Dragon_Debuff = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Dragon_Debuff);
 				}
 				return m_Dragon_Debuff;
 			}
@@ -1054,7 +1036,6 @@ namespace DOL.GS
 			Realm = eRealm.None;
 			MaxSpeedBase = 225;
 			Faction = FactionMgr.GetFactionByID(781);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(781));
 			GjalpinulvaMessengerBrain adds = new GjalpinulvaMessengerBrain();
 
 			if (!MidGjalpinulvaBrain.DragonAdds.Contains(this))
@@ -1064,9 +1045,7 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-		public override void DropLoot(GameObject killer) //no loot
-		{
-		}
+		public override bool CanDropLoot => false;
 		public override long ExperienceValue => 0;
 	}
 }
@@ -1075,7 +1054,7 @@ namespace DOL.AI.Brain
 {
 	public class GjalpinulvaMessengerBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		public GjalpinulvaMessengerBrain()
 		{
@@ -1341,10 +1320,7 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -1354,9 +1330,7 @@ namespace DOL.GS
 			// 85% ABS is cap.
 			return 0.15;
 		}
-		public override void DropLoot(GameObject killer) //no loot
-		{
-		}
+		public override bool CanDropLoot => false;
 		public override void ReturnToSpawnPoint(short speed)
 		{
 			return;
@@ -1383,7 +1357,6 @@ namespace DOL.GS
 			}
 			Level = (byte)Util.Random(60, 64);
 			Faction = FactionMgr.GetFactionByID(781);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(781));
 			RespawnInterval = -1;
 
 			MaxSpeedBase = 225;
@@ -1404,7 +1377,7 @@ namespace DOL.AI.Brain
 {
 	public class GjalpinulvaSpawnedAdBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		public GjalpinulvaSpawnedAdBrain() : base()
 		{

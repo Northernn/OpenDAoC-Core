@@ -1,34 +1,14 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
 using System.Reflection;
 using DOL.Database;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
     [PacketLib(1109, GameClient.eClientVersion.Version1109)]
     public class PacketLib1109 : PacketLib1108
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Constructs a new PacketLib for Client Version 1.109
@@ -47,9 +27,9 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player.TradeWindow == null)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.TradeWindow)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.TradeWindow)))
 			{
-				lock (m_gameClient.Player.TradeWindow.Sync)
+				lock (m_gameClient.Player.TradeWindow.Lock)
 				{
 					foreach (DbInventoryItem item in m_gameClient.Player.TradeWindow.TradeItems)
 					{
@@ -219,36 +199,36 @@ namespace DOL.GS.PacketHandler
 
 			ushort icon1 = 0;
 			ushort icon2 = 0;
-			string spell_name1 = "";
-			string spell_name2 = "";
-			if (item.Object_Type != (int)eObjectType.AlchemyTincture)
-			{
-				SpellLine chargeEffectsLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
+			string spell_name1 = string.Empty;
+			string spell_name2 = string.Empty;
 
-				if (chargeEffectsLine != null)
+			if ((eObjectType) item.Object_Type is not eObjectType.AlchemyTincture)
+			{
+				if (item.SpellID > 0)
 				{
-					if (item.SpellID > 0/* && item.Charges > 0*/)
+					Spell spell = SkillBase.GetSpellByID(item.SpellID);
+
+					if (spell != null)
 					{
-						Spell spell = SkillBase.FindSpell(item.SpellID, chargeEffectsLine);
-						if (spell != null)
-						{
-							flag |= 0x08;
-							icon1 = spell.Icon;
-							spell_name1 = spell.Name; // or best spl.Name ?
-						}
+						flag |= 0x08;
+						icon1 = spell.Icon;
+						spell_name1 = spell.Name;
 					}
-					if (item.SpellID1 > 0/* && item.Charges > 0*/)
+				}
+
+				if (item.SpellID1 > 0)
+				{
+					Spell spell = SkillBase.GetSpellByID(item.SpellID1);
+
+					if (spell != null)
 					{
-						Spell spell = SkillBase.FindSpell(item.SpellID1, chargeEffectsLine);
-						if (spell != null)
-						{
-							flag |= 0x10;
-							icon2 = spell.Icon;
-							spell_name2 = spell.Name; // or best spl.Name ?
-						}
+						flag |= 0x10;
+						icon2 = spell.Icon;
+						spell_name2 = spell.Name;
 					}
 				}
 			}
+
 			pak.WriteByte((byte)flag);
 			if ((flag & 0x08) == 0x08)
 			{
@@ -272,10 +252,12 @@ namespace DOL.GS.PacketHandler
 					name += "[" + Money.GetShortString(item.SellPrice) + "]";
 			}
 
-			if (name.Length > MAX_NAME_LENGTH)
-				name = name.Substring(0, MAX_NAME_LENGTH);
+			ReadOnlySpan<char> nameSpan = name;
 
-			pak.WritePascalString(name);
+			if (nameSpan.Length > MAX_NAME_LENGTH)
+				nameSpan = nameSpan[..MAX_NAME_LENGTH];
+
+			pak.WritePascalString(nameSpan);
 		}
 
 		protected override void WriteTemplateData(GSTCPPacketOut pak, DbItemTemplate template, int count)

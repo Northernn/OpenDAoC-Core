@@ -9,7 +9,7 @@ namespace DOL.GS.RealmAbilities
 	{
         public NegativeMaelstromAbility(DbAbility dba, int level) : base(dba, level) { }
 		private int dmgValue;
-		private uint duration;
+		private int duration;
 		private GamePlayer player;
         private const string IS_CASTING = "isCasting";
         private const string NM_CAST_SUCCESS = "NMCasting";
@@ -25,12 +25,19 @@ namespace DOL.GS.RealmAbilities
 				return;
 			}
 
-            if ( caster.GroundTarget == null || !caster.IsWithinRadius( caster.GroundTarget, 1500 ) )
+            if (!caster.GroundTarget.IsValid)
             {
-				caster.Out.SendMessage("You groundtarget is too far away to use this ability!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-				return;
+                caster.Out.SendMessage("You must set a ground target to use this ability!", eChatType.CT_System, eChatLoc.CL_SystemWindow );
+                return;
             }
-            if (caster.TempProperties.GetProperty(IS_CASTING, false))
+
+            if (!caster.IsWithinRadius(caster.GroundTarget, 1500))
+            {
+                caster.Out.SendMessage("Your ground target is too far away to use this ability!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                return;
+            }
+
+            if (caster.TempProperties.GetProperty<bool>(IS_CASTING))
             {
                 caster.Out.SendMessage("You are already casting an ability.", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                 return;
@@ -94,12 +101,12 @@ namespace DOL.GS.RealmAbilities
 		}
 		protected virtual int EndCast(ECSGameTimer timer)
 		{
-            bool castWasSuccess = player.TempProperties.GetProperty(NM_CAST_SUCCESS, false);
+            bool castWasSuccess = player.TempProperties.GetProperty<bool>(NM_CAST_SUCCESS);
             player.TempProperties.RemoveProperty(IS_CASTING);
             // GameEventMgr.RemoveHandler(player, GamePlayerEvent.Moving, new DOLEventHandler(CastInterrupted));
             GameEventMgr.RemoveHandler(player, GamePlayerEvent.AttackFinished, new DOLEventHandler(CastInterrupted));
             GameEventMgr.RemoveHandler(player, GamePlayerEvent.Dying, new DOLEventHandler(CastInterrupted));
-            if (player.IsMezzed || player.IsStunned || player.IsSitting)
+            if (player.IsCrowdControlled || player.IsSitting)
                 return 0;
             if (!castWasSuccess)
                 return 0;

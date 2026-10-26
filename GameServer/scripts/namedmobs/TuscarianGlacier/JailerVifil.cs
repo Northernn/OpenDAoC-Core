@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using DOL.AI.Brain;
-using DOL.Database;
 using DOL.Events;
 using DOL.GS;
 
@@ -24,15 +22,8 @@ namespace DOL.GS
             }
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -58,15 +49,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162583);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
 
             JailerBrain sbrain = new JailerBrain();
@@ -99,7 +82,6 @@ namespace DOL.GS
                     ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL *
                     60000; //1min is 60000 miliseconds
                 TG.Faction = FactionMgr.GetFactionByID(140);
-                TG.Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
 
                 TG.X = 27086;
                 TG.Y = 61284;
@@ -121,8 +103,7 @@ namespace DOL.AI.Brain
 {
     public class JailerBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public JailerBrain()
             : base()
@@ -132,7 +113,7 @@ namespace DOL.AI.Brain
             ThinkInterval = 2000;
         }
 
-        public static bool IsPulled = false;
+        public bool IsPulled = false;
 
         public override void OnAttackedByEnemy(AttackData ad)
         {
@@ -146,13 +127,13 @@ namespace DOL.AI.Brain
 
         public void TeleportPlayer()
         {
-            List<GameLiving> enemies = AggroList.Keys.ToList();
+            List<GameLiving> enemies = GetUnorderedAggroList();
             foreach (GamePlayer player in Body.GetPlayersInRadius(1100))
             {
                 if (player != null)
                 {
                     if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-                        AggroList.TryAdd(player, new());
+                        AddToAggroList(player);
                 }
             }
             if (enemies.Count == 0)
@@ -180,9 +161,8 @@ namespace DOL.AI.Brain
                     GamePlayer PortTarget = (GamePlayer) damage_enemies[Util.Random(0, damage_enemies.Count - 1)];
                     if (PortTarget.IsVisibleTo(Body) && Body.TargetInView && PortTarget != null && PortTarget.IsAlive)
                     {
-                        AggroList.TryRemove(PortTarget, out _);
+                        RemoveFromAggroList(PortTarget);
                         PortTarget.MoveTo(Body.CurrentRegionID, 16631, 58683, 10858, 2191);
-                        PortTarget = null;
                     }
                 }
             }
@@ -199,7 +179,7 @@ namespace DOL.AI.Brain
             return 0;
         }
         private bool RemoveAdds = false;
-        public static bool spam_teleport = false;
+        public bool spam_teleport = false;
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -287,16 +267,9 @@ namespace DOL.GS
                 default: return 30; // dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
 
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
 
         public override double GetArmorAF(eArmorSlot slot)
         {
@@ -322,14 +295,12 @@ namespace DOL.GS
             Name = "hrimathursa tormentor";
             RespawnInterval = -1;
 
-            MaxDistance = 5500;
             TetherRange = 5800;
             Size = 50;
             Level = 78;
             MaxSpeedBase = 270;
 
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             BodyType = 1;
             Realm = eRealm.None;
 
@@ -346,8 +317,7 @@ namespace DOL.AI.Brain
 {
     public class JailerAddBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public JailerAddBrain()
             : base()

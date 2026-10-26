@@ -6,7 +6,9 @@ using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
 using DOL.GS.RealmAbilities;
+using DOL.GS.ServerProperties;
 using DOL.Language;
+using OpenDAoC.Pathing;
 
 namespace DOL.GS.Effects
 {
@@ -15,29 +17,31 @@ namespace DOL.GS.Effects
         private class WeaponActionData
         {
             public DbInventoryItem AttackWeapon { get; }
+            public DbInventoryItem Ammo { get; }
             public int InterruptDuration { get; }
 
-            public WeaponActionData(DbInventoryItem attackWeapon, int interruptDuration)
+            public WeaponActionData(DbInventoryItem attackWeapon, DbInventoryItem ammo, int interruptDuration)
             {
                 AttackWeapon = attackWeapon;
+                Ammo = ammo;
                 InterruptDuration = interruptDuration;
             }
         }
 
         private const ushort EFFECT_RADIUS = 350;
+        private const int MAX_SHOTS = 5; // The code doesn't support more than 5 shots in a volley.
 
         public override ushort Icon => 4281;
         public override string Name => "Volley";
         public override bool HasPositiveEffect => true;
 
-        private int _remainingShots = 5; // The code doesn't support more than 5.
+        private int _remainingShots = MAX_SHOTS;
         private bool _isReadyToShoot;
         ConcurrentDictionary<ECSGameTimer, WeaponActionData> _weaponActionData = new();
 
-        public AtlasOF_VolleyECSEffect(ECSGameEffectInitParams initParams) : base(initParams)
+        public AtlasOF_VolleyECSEffect(in ECSGameEffectInitParams initParams) : base(initParams)
         {
             EffectType = eEffect.Volley;
-            EffectService.RequestStartEffect(this);
         }
 
         public override void OnStartEffect()
@@ -79,14 +83,6 @@ namespace DOL.GS.Effects
             base.OnStopEffect();
         }
 
-        public void Cancel(bool playerCancel)
-        {
-            EffectService.RequestImmediateCancelEffect(this, playerCancel);
-
-            foreach (GamePlayer playerInRadius in OwnerPlayer.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
-                playerInRadius.Out.SendInterruptAnimation(OwnerPlayer);
-        }
-
         private void PrepareBow(bool firstShot)
         {
             // Volley currently ignores Quickness and uses only the bow's speed for the first shot. Other shots have a 1.5 second preparation time.
@@ -120,11 +116,9 @@ namespace DOL.GS.Effects
             if (volley == null || !OwnerPlayer.IsAlive)
                 return 0;
 
-            Cancel(false);
+            Cancel();
             OwnerPlayer.Out.SendMessage("You are too tired to hold your volley any longer!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
             OwnerPlayer.attackComponent.StopAttack();
-            // TODO: Prepare normal attack?
-
             return 0;
         }
 
@@ -150,33 +144,51 @@ namespace DOL.GS.Effects
 
         protected List<GameLiving> SelectTargets()
         {
-            List<GameLiving> potentialTargets = new();
+            List<GameLiving> potentialTargets = GameLoop.GetListForTick<GameLiving>();
 
-            foreach (GamePlayer playerTarget in WorldMgr.GetPlayersCloseToSpot(OwnerPlayer.CurrentRegionID, OwnerPlayer.GroundTarget.X, OwnerPlayer.GroundTarget.Y, OwnerPlayer.GroundTarget.Z, EFFECT_RADIUS))
+            foreach (GamePlayer playerTarget in WorldMgr.GetPlayersCloseToSpot(OwnerPlayer.CurrentRegionID, OwnerPlayer.GroundTarget, EFFECT_RADIUS))
             {
-                if (!GameServer.ServerRules.IsAllowedToAttack(OwnerPlayer, playerTarget, true))
-                    continue;
-
-                if (Util.Chance(50))
+                if (IsValidTarget(OwnerPlayer, playerTarget))
                     potentialTargets.Add(playerTarget);
             }
 
-            foreach (GameNPC npcTarget in WorldMgr.GetNPCsCloseToSpot(OwnerPlayer.CurrentRegionID, OwnerPlayer.GroundTarget.X, OwnerPlayer.GroundTarget.Y, OwnerPlayer.GroundTarget.Z, EFFECT_RADIUS))
+            foreach (GameNPC npcTarget in WorldMgr.GetNPCsCloseToSpot(OwnerPlayer.CurrentRegionID, OwnerPlayer.GroundTarget, EFFECT_RADIUS))
             {
                 if (npcTarget is GameSiegeWeapon)
                     continue;
 
-                if (npcTarget.ObjectState != GameObject.eObjectState.Active)
-                    continue;
-
-                if (!GameServer.ServerRules.IsAllowedToAttack(OwnerPlayer, npcTarget, true))
-                    continue;
-
-                if (Util.Chance(50))
+                if (IsValidTarget(OwnerPlayer, npcTarget))
                     potentialTargets.Add(npcTarget);
             }
 
             return potentialTargets;
+
+            static bool IsValidTarget(GameLiving attacker, GameLiving target)
+            {
+                const int TARGET_SELECTION_CHANCE = 50;
+                const float ROOF_SEARCH_MAX_HEIGHT = 1024f;
+
+                if (!Util.Chance(TARGET_SELECTION_CHANCE))
+                    return false;
+
+                if (!GameServer.ServerRules.IsAllowedToAttack(attacker, target, true))
+                    return false;
+
+                if (Properties.VOLLEY_ROOF_CHECK)
+                {
+                    Zone zone = target.CurrentZone;
+
+                    if (zone.IsPathfindingEnabled)
+                    {
+                        EDtPolyFlags[] filters = PathfindingProvider.Instance.DefaultFilters;
+
+                        if (PathfindingProvider.Instance.GetRoofAbove(zone, new(target.X, target.Y, target.Z), ROOF_SEARCH_MAX_HEIGHT, filters).HasValue)
+                            return false;
+                    }
+                }
+
+                return true;
+            }
         }
 
         public void DecideNextShoot()
@@ -185,10 +197,8 @@ namespace DOL.GS.Effects
 
             if (_remainingShots == 0)
             {
+                Cancel();
                 OwnerPlayer.Out.SendMessage("Your volley is finished!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                Cancel(false);
-                AtlasOF_Volley volley = OwnerPlayer.GetAbility<AtlasOF_Volley>();
-                OwnerPlayer.DisableSkill(volley, AtlasOF_Volley.DISABLE_DURATION);
             }
         }
 
@@ -196,9 +206,9 @@ namespace DOL.GS.Effects
         {
             _isReadyToShoot = false;
 
-            if (player.IsBeingInterrupted)
+            if (player.IsInterruptedOrSelfInterrupted())
             {
-                Cancel(false);
+                Cancel();
                 return;
             }
 
@@ -220,7 +230,7 @@ namespace DOL.GS.Effects
                 return;
             }
 
-            if (player.GroundTarget == null)
+            if (!player.GroundTarget.IsValid)
             {
                 player.Out.SendMessage("You must have a ground target to use Volley!", eChatType.CT_SpellResisted, eChatLoc.CL_SystemWindow);
                 return;
@@ -247,7 +257,7 @@ namespace DOL.GS.Effects
             // The reason why we do this is because the player's active weapon and attack speed might change before the arrow hits something.
             int ticksToTarget = OwnerPlayer.GetDistanceTo(OwnerPlayer.GroundTarget) * 1000 / RangeAttackComponent.PROJECTILE_FLIGHT_SPEED;
             ECSGameTimer timer = new(OwnerPlayer, new ECSGameTimer.ECSTimerCallback(MakeAttack), ticksToTarget);
-            WeaponActionData weaponActionData = new(player.ActiveWeapon, player.attackComponent.AttackSpeed(player.ActiveWeapon));
+            WeaponActionData weaponActionData = new(player.ActiveWeapon, player.rangeAttackComponent.Ammo, player.attackComponent.AttackSpeed(player.ActiveWeapon));
             _weaponActionData.TryAdd(timer, weaponActionData);
 
             player.Out.SendMessage("Your shot arcs into the sky!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
@@ -256,7 +266,7 @@ namespace DOL.GS.Effects
 
             if (_remainingShots > 0)
             {
-                player.Out.SendMessage("You have " + _remainingShots + " arrows to be drawn!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                player.Out.SendMessage($"You have {_remainingShots} arrows to be drawn!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                 PrepareBow(false);
             }
         }
@@ -331,7 +341,7 @@ namespace DOL.GS.Effects
             // This is a little dirty but it allow us to use the normal attack calculations from the attack component (miss chance will be ignored).
             // We clear it up once we're done using it because at this point the attack component isn't ticking.
             AttackComponent attackComponent = OwnerPlayer.attackComponent;
-            attackComponent.weaponAction = new WeaponAction(OwnerPlayer, potentialTargets[Util.Random(0, potentialTargets.Count - 1)], weaponActionData.AttackWeapon, 1.0, weaponActionData.InterruptDuration, eRangedAttackType.Volley);
+            attackComponent.weaponAction = new WeaponAction(OwnerPlayer, potentialTargets[Util.Random(0, potentialTargets.Count - 1)], weaponActionData.AttackWeapon, 1.0, weaponActionData.InterruptDuration, eRangedAttackType.Volley, weaponActionData.Ammo);
             attackComponent.weaponAction.Execute();
             attackComponent.weaponAction = null;
             return 0;
@@ -339,31 +349,38 @@ namespace DOL.GS.Effects
 
         private void OnPlayerLeftWorld(DOLEvent e, object sender, EventArgs arguments)
         {
-            Cancel(false);
+            Cancel();
         }
 
         public void OnPlayerMoved()
         {
-            Cancel(false);
-            AtlasOF_Volley volley = OwnerPlayer.GetAbility<AtlasOF_Volley>();
-            OwnerPlayer.DisableSkill(volley, AtlasOF_Volley.DISABLE_DURATION);
+            Cancel();
             OwnerPlayer.Out.SendMessage("You move and interrupt your volley!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
         }
 
         public void OnPlayerSwitchedWeapon()
         {
-            Cancel(false);
-            AtlasOF_Volley volley = OwnerPlayer.GetAbility<AtlasOF_Volley>();
-            OwnerPlayer.DisableSkill(volley, AtlasOF_Volley.DISABLE_DURATION);
+            Cancel();
             OwnerPlayer.Out.SendMessage("You put away your bow and interrupt your volley!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
         }
 
         public void OnAttacked()
         {
-            Cancel(false);
-            AtlasOF_Volley volley = OwnerPlayer.GetAbility<AtlasOF_Volley>();
-            OwnerPlayer.DisableSkill(volley, AtlasOF_Volley.DISABLE_DURATION);
+            Cancel();
             OwnerPlayer.Out.SendMessage("You have been attacked and your volley is interrupted!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+        }
+
+        private void Cancel()
+        {
+            AtlasOF_Volley volley = OwnerPlayer.GetAbility<AtlasOF_Volley>();
+
+            if (_remainingShots < MAX_SHOTS)
+                OwnerPlayer.DisableSkill(volley, AtlasOF_Volley.DISABLE_DURATION);
+
+            End();
+
+            foreach (GamePlayer playerInRadius in OwnerPlayer.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
+                playerInRadius.Out.SendInterruptAnimation(OwnerPlayer);
         }
     }
 

@@ -32,7 +32,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.ClientEffect = 2797;
             m_dbspell.Damage = m_dmgValue;
             m_dbspell.DamageType = (int)m_damageType;
-            m_dbspell.Target = "Enemy";
+            m_dbspell.Target = eSpellTarget.ENEMY.ToString();
             m_dbspell.Radius = m_radius;
             m_dbspell.Type = eSpellType.Lifedrain.ToString();
             m_dbspell.Value = -70;
@@ -48,7 +48,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.Description = m_dmgValue + " damage blast erupts from the caster, damaging enemies in a " 
                                                + m_radius + " radius. 70% of damage inflicted is used to heal the caster.";
             m_spell = new Spell(m_dbspell, caster.Level);
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
 
         public override void Execute(GameLiving living)

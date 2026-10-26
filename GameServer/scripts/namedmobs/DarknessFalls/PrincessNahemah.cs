@@ -39,46 +39,35 @@ namespace DOL.GS
             return 0.20;
         }
         
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int MaxHealth
         {
             get { return 100000; }
         }
         public override short MaxSpeedBase => (short) (191 + Level * 2);
-        public override int AttackRange
-        {
-            get => 180;
-            set { }
-        }
+        public override int MeleeAttackRange => 180;
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60165038);
             LoadTemplate(npcTemplate);
-            MaxDistance = 1500;
             TetherRange = 2000;
             RoamingRange = 400;
             PrincessNahemahBrain sBrain = new PrincessNahemahBrain();
             SetOwnBrain(sBrain);
             sBrain.AggroLevel = 100;
             sBrain.AggroRange = 500;
-            PrincessNahemahBrain.spawnMinions = true;
+            sBrain.spawnMinions = true;
 
             // demon
             BodyType = 2;
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(191);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
             SaveIntoDatabase();
             base.AddToWorld();
             return true;
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
-            base.Die(killer);
-
             foreach (GameNPC npc in GetNPCsInRadius(4000))
             {
                 if (npc.Brain is NahemahMinionBrain)
@@ -86,6 +75,8 @@ namespace DOL.GS
                     npc.RemoveFromWorld();
                 }
             }
+
+            base.ProcessDeath(killer);
         }
     }
 }
@@ -94,10 +85,9 @@ namespace DOL.AI.Brain
 {
     public class PrincessNahemahBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static bool spawnMinions = true;
+        public bool spawnMinions = true;
         private bool RemoveAdds = false;
         public override void Think()
         {
@@ -131,7 +121,7 @@ namespace DOL.AI.Brain
 
                 foreach (GameNPC mob_c in Body.GetNPCsInRadius(2000))
                 {
-                    if (mob_c?.Brain is NahemahMinionBrain && mob_c.IsAlive && mob_c.IsAvailable)
+                    if (mob_c?.Brain is NahemahMinionBrain && mob_c.IsAlive && mob_c.IsAvailableToJoinFight)
                     {
                         AddAggroListTo(mob_c.Brain as NahemahMinionBrain);
                     }
@@ -156,7 +146,6 @@ namespace DOL.AI.Brain
                 Add.Y = Body.Y + Util.Random(100, 350);
                 Add.Z = Body.Z;
                 Add.CurrentRegion = Body.CurrentRegion;
-                Add.IsWorthReward = false;
                 Add.Heading = Body.Heading;
                 Add.AddToWorld();
             }
@@ -179,9 +168,7 @@ namespace DOL.GS
             LoadTemplate(npcTemplate);
             RoamingRange = 350;
             RespawnInterval = -1;
-            MaxDistance = 1500;
             TetherRange = 2000;
-            IsWorthReward = false; // worth no reward
             Realm = eRealm.None;
             NahemahMinionBrain adds = new NahemahMinionBrain();
             LoadedFromScript = true;
@@ -191,14 +178,11 @@ namespace DOL.GS
             BodyType = 2;
 
             Faction = FactionMgr.GetFactionByID(191);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
 
             base.AddToWorld();
             return true;
         }
-        public override void DropLoot(GameObject killer) //no loot
-        {
-        }
+        public override bool CanDropLoot => false;
         public override void Die(GameObject killer)
         {
             base.Die(null); // null to not gain experience
@@ -240,13 +224,12 @@ namespace DOL.GS
                     spell.Range = 1500;
                     spell.Radius = 350;
                     spell.SpellID = 99998;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "DirectDamage";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int) eDamageType.Heat;
                     m_fireDDSpell = new Spell(spell, 50);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_fireDDSpell);
                 }
 
                 return m_fireDDSpell;
@@ -261,8 +244,7 @@ namespace DOL.AI.Brain
 {
     public class NahemahMinionBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public NahemahMinionBrain()
         {

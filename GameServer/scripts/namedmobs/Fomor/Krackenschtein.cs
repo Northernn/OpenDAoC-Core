@@ -68,11 +68,7 @@ namespace DOL.GS
 		public override void StartAttack(GameObject target)
         {
         }
-        public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+        public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -84,17 +80,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162981);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(82);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(82));
 			MaxSpeedBase = 0;
 
 			KrackenschteinBrain sbrain = new KrackenschteinBrain();
@@ -110,7 +98,7 @@ namespace DOL.AI.Brain
 {
 	public class KrackenschteinBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public KrackenschteinBrain() : base()
 		{
 			AggroLevel = 100;
@@ -118,9 +106,9 @@ namespace DOL.AI.Brain
 			ThinkInterval = 1500;
 		}
         #region bolt random enemy
-        public static bool CanCast = false;
-		public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+        public bool CanCast = false;
+		public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -142,7 +130,7 @@ namespace DOL.AI.Brain
 			if (CanCast == false && Enemys_To_DD.Count > 0)
 			{
 				GamePlayer Target = (GamePlayer)Enemys_To_DD[Util.Random(0, Enemys_To_DD.Count - 1)];//pick random target from list
-				RandomTarget = Target;//set random target to static RandomTarget
+				RandomTarget = Target;
 				new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastBolt), 1000);
 				CanCast = true;
 			}
@@ -168,9 +156,9 @@ namespace DOL.AI.Brain
 		}
 		#endregion
 		#region Teleport random enemy
-		public static bool CanPort = false;
-		public static GamePlayer teleporttarget = null;
-		public static GamePlayer TeleportTarget
+		public bool CanPort = false;
+		public GamePlayer teleporttarget = null;
+		public GamePlayer TeleportTarget
 		{
 			get { return teleporttarget; }
 			set { teleporttarget = value; }
@@ -192,7 +180,7 @@ namespace DOL.AI.Brain
 			if (CanPort == false)
 			{
 				GamePlayer Target = (GamePlayer)Enemys_To_Port[Util.Random(0, Enemys_To_Port.Count - 1)];//pick random target from list
-				TeleportTarget = Target;//set random target to static RandomTarget
+				TeleportTarget = Target;
 				switch(Util.Random(1,4))
                 {
 					case 1: TeleportTarget.MoveTo(180, 32956, 37669, 16465, 1028); break;
@@ -268,7 +256,6 @@ namespace DOL.AI.Brain
 					spell.DamageType = (int)eDamageType.Cold;
 					spell.Uninterruptible = true;
 					m_Boss_Bolt = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_Bolt);
 				}
 				return m_Boss_Bolt;
 			}
@@ -297,7 +284,6 @@ namespace DOL.AI.Brain
 					spell.DamageType = (int)eDamageType.Energy;
 					spell.Uninterruptible = true;
 					m_Boss_PBAOE = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_PBAOE);
 				}
 				return m_Boss_PBAOE;
 			}

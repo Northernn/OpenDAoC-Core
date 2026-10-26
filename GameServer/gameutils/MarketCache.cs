@@ -1,134 +1,91 @@
-﻿/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-// MarketCache by Tolakram.  Donated from Storm
-
-using System;
-using System.Collections;
+﻿using System;
 using System.Collections.Generic;
-
 using DOL.Database;
-using DOL.GS;
-using DOL.GS.PacketHandler;
-using DOL.Events;
-
-using log4net;
+using DOL.Logging;
 
 namespace DOL.GS
 {
-	public class MarketCache
-	{
-		private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+    public static class MarketCache
+    {
+        private static readonly Logger log = LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static MarketSearchEngine _searchEngine = new();
 
-		private static Dictionary<string, DbInventoryItem> m_itemCache = null;
+        public static int ItemCount => _searchEngine.ItemCount;
 
-		private static object CacheLock = new object();
+        public static bool Initialize()
+        {
+            if (log.IsInfoEnabled)
+                log.Info("Building Market Cache...");
 
-		/// <summary>
-		/// Return a List of all items in the cache
-		/// </summary>
-		public static List<DbInventoryItem> Items
-		{
-			get { return new List<DbInventoryItem>(m_itemCache.Values); }
-		}
+            if (_searchEngine != null)
+            {
+                _searchEngine.Dispose();
+                _searchEngine = new();
+            }
 
+            try
+            {
+                WhereClause filterBySlot = DB.Column("SlotPosition").IsGreaterOrEqualTo((int)eInventorySlot.Consignment_First).And(DB.Column("SlotPosition").IsLessOrEqualTo((int)eInventorySlot.Consignment_Last));
+                List<DbInventoryItem> list = DOLDB<DbInventoryItem>.SelectObjects(filterBySlot);
 
-		/// <summary>
-		/// Load or reload all items into the market cache
-		/// </summary>
-		public static bool Initialize()
-		{
-			log.Info("Building Market Cache ....");
-			try
-			{
-				m_itemCache = new Dictionary<string, DbInventoryItem>();
+                foreach (DbInventoryItem item in list)
+                    _searchEngine.AddItem(GameInventoryItem.Create(item));
 
-				var filterBySlot = DB.Column("SlotPosition").IsGreaterOrEqualTo((int)eInventorySlot.Consignment_First).And(DB.Column("SlotPosition").IsLessOrEqualTo((int)eInventorySlot.Consignment_Last));
-				var list = DOLDB<DbInventoryItem>.SelectObjects(filterBySlot.And(DB.Column("OwnerLot").IsGreatherThan(0)));
+                if (log.IsInfoEnabled)
+                    log.Info($"Market Cache initialized with {_searchEngine.ItemCount} items.");
+            }
+            catch (Exception ex)
+            {
+                if (log.IsErrorEnabled)
+                    log.Error("Failed to initialize Market Cache.", ex);
 
-				foreach (DbInventoryItem item in list)
-				{
-					GameInventoryItem playerItem = GameInventoryItem.Create(item);
-					m_itemCache.Add(item.ObjectId, playerItem);
-				}
+                return false;
+            }
 
-				log.Info("Market Cache initialized with " + m_itemCache.Count + " items.");
-			}
-			catch
-			{
-				return false;
-			}
+            return true;
+        }
 
-			return true;
-		}
+        public static bool AddItem(DbInventoryItem item)
+        {
+            if (item == null)
+                return false;
 
-		/// <summary>
-		/// Add an item to the market cache
-		/// </summary>
-		/// <param name="item"></param>
-		/// <returns></returns>
-		public static bool AddItem(DbInventoryItem item)
-		{
-			bool added = false;
+            if (!_searchEngine.AddItem(item))
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Attempted to add duplicate item to Market Cache {item.ObjectId}");
 
-			if (item != null && item.OwnerID != null)
-			{
-				lock (CacheLock)
-				{
-					if (m_itemCache.ContainsKey(item.ObjectId) == false)
-					{
-						m_itemCache.Add(item.ObjectId, item);
-						added = true;
-					}
-					else
-					{
-						log.Error("Attempted to add duplicate item to Market Cache " + item.ObjectId);
-					}
-				}
-			}
+                return false;
+            }
 
-			return added;
-		}
+            return true;
+        }
 
-		/// <summary>
-		/// Remove an item from the market cache
-		/// </summary>
-		/// <param name="item"></param>
-		/// <returns></returns>
-		public static bool RemoveItem(DbInventoryItem item)
-		{
-			bool removed = false;
+        public static bool RemoveItem(DbInventoryItem item)
+        {
+            if (item == null)
+                return false;
 
-			if (item != null)
-			{
-				lock (CacheLock)
-				{
-					if (m_itemCache.ContainsKey(item.ObjectId))
-					{
-						m_itemCache.Remove(item.ObjectId);
-						removed = true;
-					}
-				}
-			}
+            return _searchEngine.RemoveItem(item);
+        }
 
-			return removed;
-		}
+        public static bool UpdateItem<TState>(DbInventoryItem item, Action<DbInventoryItem, TState> updateAction, TState state)
+        {
+            if (item == null)
+                return false;
 
-	}
+            // There is no elegant way to update an item in the search engine, so we remove and re-add it.
+
+            if (!RemoveItem(item))
+                return false;
+
+            updateAction(item, state);
+            return AddItem(item);
+        }
+
+        public static IEnumerable<DbInventoryItem> SearchItems(in ItemQuery query)
+        {
+            return _searchEngine.Search(query);
+        }
+    }
 }

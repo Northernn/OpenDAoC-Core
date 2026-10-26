@@ -78,15 +78,7 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (this.IsAlive && keyName == DOL.GS.Abilities.CCImmunity)
@@ -94,28 +86,12 @@ namespace DOL.GS
 
             return base.HasAbility(keyName);
         }
-        public static int OakCount = 0;
-        public override void Die(GameObject killer)
-        {
-            OakCount=0;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(8823);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Plant;
-            AncientBlackOakBrain.IsPulled = false;
-            OakCount =1;
             MeleeDamageType = eDamageType.Matter;
             AncientBlackOakBrain sbrain = new AncientBlackOakBrain();
             SetOwnBrain(sbrain);
@@ -150,7 +126,6 @@ namespace DOL.GS
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Body;
                     m_OakDD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OakDD);
                 }
 
                 return m_OakDD;
@@ -163,8 +138,7 @@ namespace DOL.AI.Brain
 {
     public class AncientBlackOakBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public AncientBlackOakBrain()
             : base()
@@ -173,7 +147,7 @@ namespace DOL.AI.Brain
             AggroRange = 400;
             ThinkInterval = 1500;
         }
-        public static bool IsPulled = false;
+        public bool IsPulled = false;
         public override void Think()
         {
             if (!CheckProximityAggro())

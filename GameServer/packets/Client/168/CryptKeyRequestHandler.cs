@@ -1,30 +1,11 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-using System;
 using DOL.GS.ServerProperties;
 
 namespace DOL.GS.PacketHandler.Client.v168
 {
 	[PacketHandlerAttribute(PacketHandlerType.TCP, eClientPackets.CryptKeyRequest, "Handles crypt key requests", eClientStatus.None)]
-	public class CryptKeyRequestHandler : IPacketHandler
+	public class CryptKeyRequestHandler : PacketHandler
 	{
-		public void HandlePacket(GameClient client, GSPacketIn packet)
+		protected override void HandlePacketInternal(GameClient client, GSPacketIn packet)
 		{
 			// for 1.115c+ The First client packet Changes.
 			if (client.Version < GameClient.eClientVersion.Version1115)
@@ -38,17 +19,12 @@ namespace DOL.GS.PacketHandler.Client.v168
 				client.MinorRev = packet.ReadString(1);
 				if (rc4 == 1)
 				{
-					//DOLConsole.Log("SBox=\n");
-					//DOLConsole.LogDump(client.PacketProcessor.Encoding.SBox);
 					packet.Read(client.PacketProcessor.Encoding.SBox, 0, 256);
 					client.PacketProcessor.Encoding.EncryptionState = eEncryptionState.PseudoRC4Encrypted;
-					//DOLConsole.WriteLine(client.Socket.RemoteEndPoint.ToString()+": SBox set!");
-					//DOLConsole.Log("SBox=\n");
-					//DOLConsole.LogDump(((PacketEncoding168)client.PacketProcessor.Encoding).SBox);
 				}
 				else
 				{
-				  //Send the crypt key to the client
+					//Send the crypt key to the client
 					client.Out.SendVersionAndCryptKey();
 				}
 			}

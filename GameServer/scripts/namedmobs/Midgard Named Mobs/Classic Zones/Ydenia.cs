@@ -20,15 +20,7 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -53,13 +45,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60168100);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_QUEST_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			YdeniaBrain sbrain = new YdeniaBrain();
@@ -67,7 +52,7 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			var throwPlayer = TempProperties.GetProperty<ECSGameTimer>("ydenia_teleport");//cancel teleport
 			if (throwPlayer != null)
@@ -75,7 +60,7 @@ namespace DOL.GS
 				throwPlayer.Stop();
 				TempProperties.RemoveProperty("ydenia_teleport");
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
 		public override void DealDamage(AttackData ad)
 		{
@@ -91,7 +76,7 @@ namespace DOL.AI.Brain
 {
     public class YdeniaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public YdeniaBrain() : base()
 		{
 			AggroLevel = 100;
@@ -228,12 +213,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Lifedrain";
 					spell.Range = 1500;
 					spell.SpellID = 12010;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					m_YdeniaDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_YdeniaDD);
 				}
 				return m_YdeniaDD;
 			}
@@ -258,10 +242,9 @@ namespace DOL.AI.Brain
 					spell.Value = 66;
 					spell.Radius = 400;
 					spell.SpellID = 12011;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.StrengthConstitutionDebuff.ToString();
 					m_Ydenia_SC_Debuff = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Ydenia_SC_Debuff);
 				}
 				return m_Ydenia_SC_Debuff;
 			}

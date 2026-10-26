@@ -1,40 +1,17 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using DOL.GS.PacketHandler.Client.v168;
 using DOL.GS.RealmAbilities;
 using DOL.GS.Spells;
 using DOL.GS.Styles;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
     [PacketLib(1110, GameClient.eClientVersion.Version1110)]
     public class PacketLib1110 : PacketLib1109
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
         /// <summary>
         /// Constructs a new PacketLib for Client Version 1.110
         /// </summary>
@@ -58,7 +35,7 @@ namespace DOL.GS.PacketHandler
 		/// <param name="info"></param>
 		public override void SendDelveInfo(string info)
 		{
-			using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.DelveInfo)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.DelveInfo)))
 			{
 				pak.WriteString(info, 2048);
 				pak.WriteByte(0); // 0-terminated
@@ -68,14 +45,15 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendUpdateIcons(IList changedEffects, ref int lastUpdateEffectsCount)
 		{
+			SendUpdateIcons(ref lastUpdateEffectsCount, false);
+		}
+
+		public override void SendUpdateIcons(ref int lastUpdateEffectsCount, bool forced)
+		{
 			if (m_gameClient.Player == null)
-			{
 				return;
-			}
 
-			var tooltipSpellHandlers = new List<ISpellHandler>();
-
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.UpdateIcons)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.UpdateIcons)))
 			{
 				long initPos = pak.Position;
 
@@ -87,51 +65,50 @@ namespace DOL.GS.PacketHandler
 				pak.WriteByte(Icons); // unknown
 				pak.WriteByte(0); // unknown
 
-				foreach (ECSGameEffect effect in m_gameClient.Player.effectListComponent.GetAllEffects().Where(e => e.EffectType != eEffect.Pulse))
+				foreach (ECSGameEffect effect in m_gameClient.Player.effectListComponent.GetSortedEffects(static e => e.EffectType is not eEffect.Pulse))
 				{
 					if (effect.Icon == 0)
 						continue;
 
 					fxcount++;
-					if (changedEffects != null && !changedEffects.Contains(effect))
-					{
+					int currentClientIndex = fxcount - 1;
+
+					// Did the effect's position shift because an earlier effect was removed?
+					// Or is this a brand new effect (LastClientIndex == -1, or NeedsUpdate == true)?
+					if (!forced && !effect.NeedsClientUpdate && effect.LastClientIndex == currentClientIndex)
 						continue;
-					}
+
+					effect.LastClientIndex = currentClientIndex;
+					effect.NeedsClientUpdate = false;
 
 					// store tooltip update for gamespelleffect.
 					if (ForceTooltipUpdate && effect is ECSGameSpellEffect gameEffect)
 					{
-						tooltipSpellHandlers.Add(gameEffect.SpellHandler);
+						ISpellHandler spellHandler = gameEffect.SpellHandler;
+
+						if (m_gameClient.CanSendTooltip(24, spellHandler.Spell.InternalID))
+							SendDelveInfo(DetailDisplayHandler.DelveSpell(spellHandler));
 					}
 
-					//						log.DebugFormat("adding [{0}] '{1}'", fxcount-1, effect.Name);
 					// icon index
 					pak.WriteByte((byte)(fxcount - 1));
 					// Determines where to grab the icon from. Spell-based effect icons use a different source than Ability-based icons.
 					pak.WriteByte((effect is ECSGameAbilityEffect && effect.Icon <= 5000) ? (byte)0xff : (byte)(fxcount - 1));
 					//pak.WriteByte((effect is ECSGameSpellEffect || effect.Icon > 5000) ? (byte)(fxcount - 1) : (byte)0xff); // <- [Takii] previous version
 
-					byte ImmunByte = 0;
-					var gsp = effect as ECSGameEffect;
-					if (gsp is ECSImmunityEffect || gsp.IsDisabled)
-						ImmunByte = 1;
-					//todo this should be the ImmunByte
+					byte ImmunByte = (byte) (effect is ECSImmunityEffect || effect.IsDisabled ? 1 : 0);
 					pak.WriteByte(ImmunByte); // new in 1.73; if non zero says "protected by" on right click
 
 					// bit 0x08 adds "more..." to right click info
 					pak.WriteShort(effect.Icon);
 					pak.WriteShort((ushort)(effect.GetRemainingTimeForClient() / 1000));
-					if (effect is ECSGameEffect || effect is ECSImmunityEffect)
-						pak.WriteShort(effect.Icon); //v1.110+ send the spell ID for delve info in active icon
+
+					if (effect is ECSGameEffect)
+						pak.WriteShort(effect.TooltipId); //v1.110+ send the spell ID for delve info in active icon
 					else
 						pak.WriteShort(0);//don't override existing tooltip ids
 
-					byte flagNegativeEffect = 0;
-
-					if (!effect.HasPositiveEffect)
-					{
-						flagNegativeEffect = 1;
-					}
+					byte flagNegativeEffect = (byte) (effect.HasPositiveEffect ? 0 : 1);
 
 					pak.WriteByte(flagNegativeEffect);
 
@@ -149,13 +126,9 @@ namespace DOL.GS.PacketHandler
 					entriesCount++;
 				}
 
-				if (changedEffects != null)
-				{
-					changedEffects.Clear();
-				}
-
 				if (entriesCount == 0)
 				{
+					pak.ReleasePooledObject();
 					return; // nothing changed - no update is needed
 				}
 
@@ -164,13 +137,6 @@ namespace DOL.GS.PacketHandler
 				pak.Seek(0, SeekOrigin.End);
 
 				SendTCP(pak);
-			}
-
-			// force tooltips update
-			foreach (var spellHandler in tooltipSpellHandlers)
-			{
-				if (m_gameClient.CanSendTooltip(24, spellHandler.Spell.InternalID))
-					SendDelveInfo(DetailDisplayHandler.DelveSpell(spellHandler));
 			}
 		}
 
@@ -213,8 +179,8 @@ namespace DOL.GS.PacketHandler
 					{
 						if (style.Procs != null && style.Procs.Count > 0)
 						{
-							foreach ((Spell, int, int) proc in style.Procs)
-								SendDelveInfo(DetailDisplayHandler.DelveSpell(m_gameClient, proc.Item1));
+							foreach (StyleProcInfo proc in style.Procs)
+								SendDelveInfo(DetailDisplayHandler.DelveSpell(m_gameClient, proc.Spell));
 						}
 
 						SendDelveInfo(DetailDisplayHandler.DelveStyle(m_gameClient, t.InternalID));
@@ -225,7 +191,7 @@ namespace DOL.GS.PacketHandler
 					if (spell is Song || spell.NeedInstrument)
 					{
 						if (m_gameClient.CanSendTooltip(26, spell.InternalID))
-							SendDelveInfo(DetailDisplayHandler.DelveSong(m_gameClient, spell.InternalID));
+							SendDelveInfo(DetailDisplayHandler.DelveSong(m_gameClient, spell));
 					}
 
 					if (m_gameClient.CanSendTooltip(24, spell.InternalID))
@@ -252,23 +218,25 @@ namespace DOL.GS.PacketHandler
         {
             if (siegeWeapon == null)
                 return;
-            using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
             {
-                pak.WriteInt((uint)siegeWeapon.ObjectID);
+                bool isGroundTargetValid = siegeWeapon.GroundTarget.IsValid;
+
+                pak.WriteInt(siegeWeapon.ObjectID);
                 pak.WriteInt(
                     (uint)
                     (siegeWeapon.TargetObject == null
-                     ? (siegeWeapon.GroundTarget == null ? 0 : siegeWeapon.GroundTarget.X)
+                     ? (!isGroundTargetValid ? 0 : siegeWeapon.GroundTarget.X)
                      : siegeWeapon.TargetObject.X));
                 pak.WriteInt(
                     (uint)
                     (siegeWeapon.TargetObject == null
-                     ? (siegeWeapon.GroundTarget == null ? 0 : siegeWeapon.GroundTarget.Y)
+                     ? (!isGroundTargetValid ? 0 : siegeWeapon.GroundTarget.Y)
                      : siegeWeapon.TargetObject.Y));
                 pak.WriteInt(
                     (uint)
                     (siegeWeapon.TargetObject == null
-                     ? (siegeWeapon.GroundTarget == null ? 0 : siegeWeapon.GroundTarget.Z)
+                     ? (!isGroundTargetValid ? 0 : siegeWeapon.GroundTarget.Z)
                      : siegeWeapon.TargetObject.Z));
                 pak.WriteInt((uint)(siegeWeapon.TargetObject == null ? 0 : siegeWeapon.TargetObject.ObjectID));
                 pak.WriteShort(siegeWeapon.Effect);
@@ -288,7 +256,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (siegeWeapon == null)
 				return;
-			using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
 			{
 				pak.WriteInt((uint) siegeWeapon.ObjectID);
 				pak.WriteInt((uint) (siegeWeapon.TargetObject == null ? siegeWeapon.GroundTarget.X : siegeWeapon.TargetObject.X));

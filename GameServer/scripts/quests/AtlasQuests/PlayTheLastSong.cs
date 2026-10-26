@@ -18,7 +18,6 @@ using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
 using DOL.GS.PlayerTitles;
-using log4net;
 
 namespace DOL.GS.Quests.Midgard
 {
@@ -27,7 +26,7 @@ namespace DOL.GS.Quests.Midgard
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		protected const string questTitle = "[Memorial] Play the Last Song";
 		protected const int minimumLevel = 1;
@@ -465,7 +464,7 @@ namespace DOL.GS.Quests.Midgard
 			CastResistance();
 			IsSinging = false;
 			quest.FinishQuest();
-			ClientService.UpdateObjectForPlayer(player, Freeya);
+			ClientService.UpdateNpcForPlayer(player, Freeya);
 
 			return 0;
 		}
@@ -512,14 +511,13 @@ namespace DOL.GS.Quests.Midgard
 					spell.Range = 500;
 					spell.Radius = 500;
 					spell.SpellID = 3618;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "HealthRegenBuff";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = 0;
 					spell.Message1 = "Dextz looks calmer.";
 					m_HealthRegen = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_HealthRegen);
 				}
 				return m_HealthRegen;
 			}
@@ -568,14 +566,13 @@ namespace DOL.GS.Quests.Midgard
 					spell.Range = 500;
 					spell.Radius = 500;
 					spell.SpellID = 3612;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "SpeedEnhancement";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = 0;
 					spell.Message1 = "Thor Boyaux will be protected with Enhancement.";
 					m_SpeedSong = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_SpeedSong);
 				}
 				return m_SpeedSong;
 			}
@@ -624,14 +621,13 @@ namespace DOL.GS.Quests.Midgard
 					spell.Range = 500;
 					spell.Radius = 500;
 					spell.SpellID = 3607;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "DamageAdd";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = 0;
 					spell.Message1 = "Exiled Vaettir will swing their weapons with zeal.";
 					m_DamageAdd = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_DamageAdd);
 				}
 				return m_DamageAdd;
 			}
@@ -677,14 +673,13 @@ namespace DOL.GS.Quests.Midgard
 					spell.Range = 500;
 					spell.Radius = 500;
 					spell.SpellID = 3656;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "EnergyResistBuff";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = 0;
 					spell.Message1 = "You are protected from energy!";
 					m_Resistance = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Resistance);
 				}
 				return m_Resistance;
 			}

@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -59,18 +52,10 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60165335);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Flags = eFlags.FLYING;
 			Faction = FactionMgr.GetFactionByID(20);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(20));
 
 			RisnirCrussBrain sbrain = new RisnirCrussBrain();
 			SetOwnBrain(sbrain);
@@ -100,7 +85,6 @@ namespace DOL.GS
 				add.CurrentRegion = CurrentRegion;
 				add.Heading = Heading;
 				add.Faction = FactionMgr.GetFactionByID(20);
-				add.Faction.AddFriendFaction(FactionMgr.GetFactionByID(20));
 				StandardMobBrain brain = new StandardMobBrain();
 				add.SetOwnBrain(brain);
 				brain.AggroRange = 600;
@@ -109,14 +93,14 @@ namespace DOL.GS
 			}
             base.EnemyKilled(enemy);
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(5000))
 			{
 				if (npc != null && npc.IsAlive && npc.RespawnInterval == -1 && npc.PackageID == "RisnirCrussAdd")
 					npc.Die(this);
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
     }
 }
@@ -124,7 +108,7 @@ namespace DOL.AI.Brain
 {
     public class RisnirCrussBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public RisnirCrussBrain() : base()
 		{
 			AggroLevel = 100;
@@ -213,7 +197,6 @@ namespace DOL.AI.Brain
 					spell.DamageType = (int)eDamageType.Energy;
 					spell.Uninterruptible = true;
 					m_Boss_PBAOE = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_PBAOE);
 				}
 				return m_Boss_PBAOE;
 			}
@@ -238,13 +221,12 @@ namespace DOL.AI.Brain
 					spell.Radius = 450;
 					spell.Range = 1500;
 					spell.SpellID = 18914;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "Mesmerize";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Spirit;
 					m_Boss_Mezz = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Boss_Mezz);
 				}
 				return m_Boss_Mezz;
 			}

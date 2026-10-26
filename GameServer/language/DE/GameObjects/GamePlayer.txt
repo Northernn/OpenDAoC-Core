@@ -93,7 +93,7 @@ GamePlayer.CommandNpcAttack.ComeHere:			Ihr befehlt {0} zu Euch zu kommen.
 GamePlayer.CommandNpcAttack.GoToTarget:			Ihr befehlt {0} zu Eurem Ziel zu gehen.
 GamePlayer.CommandNpcAttack.Passive:			Ihr befehlt {0} sich vom Kampf zu löden!
 GamePlayer.CommandNpcAttack.Aggressive:			Ihr befehlt {0} alle Feinde anzugreifen!
-GamePlayer.CommandNpcAttack.Denfensive:			Ihr befehlt {0} Euch zu beschützen!
+GamePlayer.CommandNpcAttack.Defensive:			Ihr befehlt {0} Euch zu beschützen!
 
 GamePlayer.CraftItem.DontHaveAbilityMake:		Ihr habt nicht die Fähigkeit, diesen Gegenstand herzustellen.			
 
@@ -375,8 +375,8 @@ GamePlayer.SwitchQuiver.ShootWith:			Ihr wollt schießen mit: {0}.
 
 GamePlayer.SwitchWeapon.SpellCancelled:			Euer Zauberspruch wurde abgebrochen!		
 
-GamePlayer.UpdateEncumberance.Encumbered:		Ihr seid überlastet!			
-GamePlayer.UpdateEncumberance.EncumberedMoveSlowly:	Ihr seid überlastet und bewegt Euch deshalb langsamer.				
+GamePlayer.UpdateEncumbrance.EncumberedMoveSlowly:	Ihr seid überlastet und bewegt Euch deshalb langsamer.
+GamePlayer.UpdateEncumbrance.EncumberedCannotMove:	Ihr seid überlastet und könnt euch nicht bewegen.
 
 GamePlayer.UpdateSpellLine.GainPower:			Ihr verbessert Euch bei den Zaubersprüchen der "{0}"-Linie!		
 

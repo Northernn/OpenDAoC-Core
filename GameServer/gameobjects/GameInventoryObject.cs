@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using DOL.Database;
 using DOL.GS.PacketHandler;
+using DOL.Logging;
 
 namespace DOL.GS
 {
@@ -10,19 +13,21 @@ namespace DOL.GS
     /// </summary>
     public interface IGameInventoryObject
     {
-        object LockObject();
-        int FirstClientSlot { get; }
-        int LastClientSlot { get; }
-        int FirstDBSlot { get; }
-        int LastDBSlot { get; }
-        string GetOwner(GamePlayer player);
-        IList<DbInventoryItem> DBItems(GamePlayer player = null);
-        Dictionary<int, DbInventoryItem> GetClientInventory(GamePlayer player);
-        bool CanHandleMove(GamePlayer player, ushort fromClientSlot, ushort toClientSlot);
-        bool MoveItem(GamePlayer player, ushort fromClientSlot, ushort toClientSlot, ushort itemCount);
-        bool OnAddItem(GamePlayer player, DbInventoryItem item);
-        bool OnRemoveItem(GamePlayer player, DbInventoryItem item);
-        bool SetSellPrice(GamePlayer player, ushort clientSlot, uint sellPrice);
+        eInventorySlot FirstClientSlot { get; }
+        eInventorySlot LastClientSlot { get; }
+        int FirstDbSlot { get; }
+        int LastDbSlot { get; }
+        string GetOwner();
+        IEnumerable<DbInventoryItem> GetDbItems();
+        Dictionary<int, DbInventoryItem> GetClientInventory();
+        bool TryGetItem(int slot, out DbInventoryItem item);
+        bool CanHandleMove(GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot);
+        bool MoveItem(GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, ushort itemCount);
+        bool OnAddItem(GamePlayer player, DbInventoryItem item, int previousSlot);
+        bool OnRemoveItem(GamePlayer player, DbInventoryItem item, int previousSlot);
+        bool OnMoveItem(GamePlayer player, DbInventoryItem firstItem, int previousFirstSlot, DbInventoryItem secondItem, int previousSecondSlot);
+        void OnItemManipulationError(GamePlayer player);
+        bool SetSellPrice(GamePlayer player, eInventorySlot clientSlot, uint sellPrice);
         bool SearchInventory(GamePlayer player, MarketSearch.SearchData searchData);
         void AddObserver(GamePlayer player);
         void RemoveObserver(GamePlayer player);
@@ -33,53 +38,44 @@ namespace DOL.GS
     /// </summary>
     public static class GameInventoryObjectExtensions
     {
-        public static bool CanHandleRequest(this IGameInventoryObject thisObject, ushort fromClientSlot, ushort toClientSlot)
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+
+        public static bool CanHandleRequest(this IGameInventoryObject thisObject, eInventorySlot fromClientSlot, eInventorySlot toClientSlot)
         {
-            return (fromClientSlot >= thisObject.FirstClientSlot && fromClientSlot <= thisObject.LastClientSlot) || (toClientSlot >= thisObject.FirstClientSlot && toClientSlot <= thisObject.LastClientSlot);
+            return CanHandleSlot(thisObject, fromClientSlot) || CanHandleSlot(thisObject, toClientSlot);
         }
 
-        public static Dictionary<int, DbInventoryItem> GetClientItems(this IGameInventoryObject thisObject, GamePlayer player)
+        public static bool CanHandleSlot(this IGameInventoryObject thisObject, eInventorySlot slot)
         {
-            Dictionary<int, DbInventoryItem> inventory = new();
-            int slotOffset = thisObject.FirstClientSlot - thisObject.FirstDBSlot;
-
-            foreach (DbInventoryItem item in thisObject.DBItems(player))
-            {
-                if (item != null && !inventory.ContainsKey(item.SlotPosition + slotOffset))
-                    inventory.Add(item.SlotPosition + slotOffset, item);
-            }
-
-            return inventory;
+            return slot >= thisObject.FirstClientSlot && slot <= thisObject.LastClientSlot;
         }
 
-        public static IDictionary<int, DbInventoryItem> MoveItem(this IGameInventoryObject thisObject, GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, ushort count)
+        public static Dictionary<int, DbInventoryItem> MoveItemInternal(this IGameInventoryObject thisObject, GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, ushort count)
         {
-            lock (thisObject.LockObject())
-            {
-                if (!GetItemInSlot(fromClientSlot, out DbInventoryItem fromItem))
-                {
-                    SendUnsupportedActionMessage(player);
-                    return null;
-                }
+            // No thread synchronization is performed here.
+            // The caller is expected to lock on relevant inventories, caches, etc.
 
-                GetItemInSlot(toClientSlot, out DbInventoryItem toItem);
-                IDictionary<int, DbInventoryItem> updatedItems = MoveItemInner(fromItem, toItem);
-                return updatedItems;
+            if (!GetItemInSlot(fromClientSlot, out DbInventoryItem fromItem))
+            {
+                SendUnsupportedActionMessage(player);
+                return new() { {(int) fromClientSlot, null} };
             }
+
+            GetItemInSlot(toClientSlot, out DbInventoryItem toItem);
+            return MoveItemInner(fromItem, toItem);
 
             bool GetItemInSlot(eInventorySlot slot, out DbInventoryItem item)
             {
-                item = null;
-
                 if (IsHousingInventorySlot(slot))
-                    thisObject.GetClientInventory(player).TryGetValue((int) slot, out item);
+                    return thisObject.TryGetItem((int) slot, out item);
                 else
+                {
                     item = player.Inventory.GetItem(slot);
-
-                return item != null;
+                    return item != null;
+                }
             }
 
-            IDictionary<int, DbInventoryItem> MoveItemInner(DbInventoryItem fromItem, DbInventoryItem toItem)
+            Dictionary<int, DbInventoryItem> MoveItemInner(DbInventoryItem fromItem, DbInventoryItem toItem)
             {
                 Dictionary<int, DbInventoryItem> updatedItems = new(2);
 
@@ -97,7 +93,7 @@ namespace DOL.GS
                         return updatedItems;
                     }
 
-                    StackItems(player, fromClientSlot, toClientSlot, fromItem, toItem, updatedItems);
+                    StackItems(thisObject, player, fromClientSlot, toClientSlot, fromItem, toItem, updatedItems);
                 }
                 else
                     SwapItems(thisObject, player, fromClientSlot, toClientSlot, fromItem, toItem, updatedItems);
@@ -106,60 +102,27 @@ namespace DOL.GS
             }
         }
 
-        public static void NotifyPlayers(this IGameInventoryObject thisObject, GameObject thisOwner, GamePlayer player, Dictionary<string, GamePlayer> observers, IDictionary<int, DbInventoryItem> updatedItems)
+        public static void NotifyObservers(GamePlayer player, Dictionary<string, GamePlayer> observers, IDictionary<int, DbInventoryItem> updatedItems)
         {
-            List<string> inactiveList = new();
-            Dictionary<int, DbInventoryItem> updatedItemsForObservers = null;
-            bool playerNotified = false;
+            if (updatedItems == null)
+                return;
 
-            // Prepare a new list for observers so that we don't update their inventories.
-            if (updatedItems != null)
-            {
-                updatedItemsForObservers = new(2);
+            Dictionary<int, DbInventoryItem> updatedItemsForObserver = updatedItems.Where(x => IsHousingInventorySlot((eInventorySlot) x.Key)).ToDictionary();
+            bool playerFound = false;
 
-                foreach (var updateItem in updatedItems)
-                {
-                    if (updateItem.Key >= thisObject.FirstClientSlot && updateItem.Key <= thisObject.LastClientSlot)
-                        updatedItemsForObservers[updateItem.Key] = updateItem.Value;
-                }
-            }
-
-            // Send updates to observers.
             foreach (GamePlayer observer in observers.Values)
             {
-                if (observer.ActiveInventoryObject != thisObject)
+                if (observer == player)
                 {
-                    inactiveList.Add(observer.Name);
-                    continue;
+                    observer.Client.Out.SendInventoryItemsUpdate(updatedItems, eInventoryWindowType.Update);
+                    playerFound = true;
                 }
 
-                if (!thisOwner.IsWithinRadius(observer, WorldMgr.INFO_DISTANCE))
-                {
-                    observer.ActiveInventoryObject = null;
-                    inactiveList.Add(observer.Name);
-
-                    continue;
-                }
-
-                if (player == observer)
-                {
-                    if (updatedItems != null)
-                    {
-                        player.Client.Out.SendInventoryItemsUpdate(updatedItems, eInventoryWindowType.Update);
-                        playerNotified = true;
-                    }
-                }
-                else if (updatedItemsForObservers != null)
-                    observer.Client.Out.SendInventoryItemsUpdate(updatedItemsForObservers, eInventoryWindowType.Update);
+                observer.Client.Out.SendInventoryItemsUpdate(updatedItemsForObserver, eInventoryWindowType.Update);
             }
 
-            // Happens if the player wasn't added to the observers.
-            if (!playerNotified)
+            if (!playerFound)
                 player.Client.Out.SendInventoryItemsUpdate(updatedItems, eInventoryWindowType.Update);
-
-            // Remove inactive observers.
-            foreach (string observerName in inactiveList)
-                observers.Remove(observerName);
         }
 
         private static void MoveItemToEmptySlot(this IGameInventoryObject thisObject, GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, ushort count, Dictionary<int, DbInventoryItem> updatedItems)
@@ -182,24 +145,12 @@ namespace DOL.GS
 
             void MoveWholeStack()
             {
-                if (IsBackpackSlot(fromClientSlot))
+                if (IsCharacterInventorySlot(fromClientSlot))
                 {
-                    if (!player.Inventory.RemoveTradeItem(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(MoveWholeStack), fromClientSlot, toClientSlot, fromItem, null, count);
-                        return;
-                    }
-
                     if (IsHousingInventorySlot(toClientSlot))
                     {
-                        fromItem.SlotPosition = (int) toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDBSlot;
-                        fromItem.OwnerID = thisObject.GetOwner(player);
-
-                        if (!thisObject.OnAddItem(player, fromItem))
-                        {
-                            SendErrorMessage(player, nameof(MoveWholeStack), fromClientSlot, toClientSlot, fromItem, null, count);
+                        if (!MoveWholeStackFromCharacterInventoryToHousingInventory())
                             return;
-                        }
                     }
                     else
                     {
@@ -211,22 +162,13 @@ namespace DOL.GS
                 {
                     if (IsHousingInventorySlot(toClientSlot))
                     {
-                        fromItem.SlotPosition = (int) toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDBSlot;
-                        fromItem.OwnerID = thisObject.GetOwner(player);
+                       if (!MoveWholeStackFromHousingInventoryToHousingInventory())
+                            return;
                     }
-                    else if (IsBackpackSlot(toClientSlot))
+                    else if (IsCharacterInventorySlot(toClientSlot))
                     {
-                        if (!thisObject.OnRemoveItem(player, fromItem))
-                        {
-                            SendErrorMessage(player, nameof(MoveWholeStack), fromClientSlot, toClientSlot, fromItem, null, count);
+                        if (!MoveWholeStackFromHousingInventoryToCharacterInventory())
                             return;
-                        }
-
-                        if (!player.Inventory.AddTradeItem(toClientSlot, fromItem))
-                        {
-                            SendErrorMessage(player, nameof(MoveWholeStack), fromClientSlot, toClientSlot, fromItem, null, count);
-                            return;
-                        }
                     }
                     else
                     {
@@ -240,68 +182,105 @@ namespace DOL.GS
                     return;
                 }
 
-                if (!GameServer.Database.SaveObject(fromItem))
-                {
-                    SendErrorMessage(player, nameof(MoveWholeStack), fromClientSlot, toClientSlot, fromItem, null, count);
-                    return;
-                }
-
                 updatedItems.Add((int) fromClientSlot, null);
                 updatedItems.Add((int) toClientSlot, fromItem);
+
+                bool MoveWholeStackFromCharacterInventoryToHousingInventory()
+                {
+                    if (!player.Inventory.CheckItemsBeforeMovingFromOrToExternalInventory(fromItem, null, toClientSlot, fromClientSlot, count))
+                        return false;
+
+                    if (!player.Inventory.RemoveItemWithoutDbDeletion(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(MoveWholeStackFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, null, count);
+                        return false;
+                    }
+
+                    player.Inventory.OnItemMove(fromItem, null, fromClientSlot, toClientSlot);
+                    fromItem.SlotPosition = toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDbSlot;
+                    fromItem.OwnerID = thisObject.GetOwner();
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(MoveWholeStackFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, null, count);
+                        return false;
+                    }
+
+                    thisObject.OnAddItem(player, fromItem, (int) fromClientSlot);
+                    player.Inventory.SaveIntoDatabase(player.InternalID);
+                    return true;
+                }
+
+                bool MoveWholeStackFromHousingInventoryToHousingInventory()
+                {
+                    int previousSlot = fromItem.SlotPosition;
+                    fromItem.SlotPosition = toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDbSlot;
+                    fromItem.OwnerID = thisObject.GetOwner();
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(MoveWholeStackFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, null, count);
+                        return false;
+                    }
+
+                    thisObject.OnMoveItem(player, fromItem, previousSlot, null, fromItem.SlotPosition);
+                    return true;
+                }
+
+                bool MoveWholeStackFromHousingInventoryToCharacterInventory()
+                {
+                    if (!player.Inventory.CheckItemsBeforeMovingFromOrToExternalInventory(fromItem, null, fromClientSlot, toClientSlot, count))
+                        return false;
+
+                    int previousSlot = fromItem.SlotPosition;
+
+                    if (!player.Inventory.AddItemWithoutDbAddition(toClientSlot, fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(MoveWholeStackFromHousingInventoryToCharacterInventory), fromClientSlot, toClientSlot, fromItem, null, count);
+                        return false;
+                    }
+
+                    thisObject.OnRemoveItem(player, fromItem, previousSlot);
+                    player.Inventory.OnItemMove(fromItem, null, fromClientSlot, toClientSlot);
+                    player.Inventory.SaveIntoDatabase(player.InternalID);
+                    return true;
+                }
             }
 
             void SplitStack()
             {
-                if (IsHousingInventorySlot(fromClientSlot))
-                {
-                    fromItem.Count -= count;
-
-                    if (!GameServer.Database.SaveObject(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(SplitStack), fromClientSlot, toClientSlot, fromItem, null, count);
-                        return;
-                    }
-                }
-                else if (IsBackpackSlot(fromClientSlot))
-                {
-                    if (!player.Inventory.RemoveCountFromStack(fromItem, count))
-                    {
-                        SendErrorMessage(player, nameof(SplitStack), fromClientSlot, toClientSlot, fromItem, null, count);
-                        return;
-                    }
-                }
-                else
-                {
-                    SendUnsupportedActionMessage(player);
-                    return;
-                }
-
                 DbInventoryItem toItem = (DbInventoryItem) fromItem.Clone();
                 toItem.Count = count;
                 toItem.AllowAdd = fromItem.Template.AllowAdd;
 
-                if (IsHousingInventorySlot(toClientSlot))
+                if (IsBackpackSlot(fromClientSlot))
                 {
-                    toItem.SlotPosition = (int) toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDBSlot;
-                    toItem.OwnerID = thisObject.GetOwner(player);
-
-                    if (!thisObject.OnAddItem(player, toItem))
+                    if (IsHousingInventorySlot(toClientSlot))
                     {
-                        SendErrorMessage(player, nameof(SplitStack), fromClientSlot, toClientSlot, fromItem, toItem, count);
-                        return;
+                        if (!SplitStackFromCharacterInventoryToHousingInventory())
+                            return;
                     }
-
-                    if (!GameServer.Database.AddObject(toItem))
+                    else
                     {
-                        SendErrorMessage(player, nameof(SplitStack), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        SendUnsupportedActionMessage(player);
                         return;
                     }
                 }
-                else if (IsBackpackSlot(toClientSlot))
+                else if (IsHousingInventorySlot(fromClientSlot))
                 {
-                    if (!player.Inventory.AddItem(toClientSlot, toItem))
+                    if (IsHousingInventorySlot(toClientSlot))
                     {
-                        SendErrorMessage(player, nameof(SplitStack), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        if (!SplitStackFromHousingInventoryToHousingInventory())
+                            return;
+                    }
+                    else if (IsBackpackSlot(toClientSlot))
+                    {
+                        if (!SplitStackFromHousingInventoryToCharacterInventory())
+                            return;
+                    }
+                    else
+                    {
+                        SendUnsupportedActionMessage(player);
                         return;
                     }
                 }
@@ -313,79 +292,101 @@ namespace DOL.GS
 
                 updatedItems.Add((int) fromClientSlot, fromItem);
                 updatedItems.Add((int) toClientSlot, toItem);
-            }
-        }
 
-        private static void StackItems(GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, DbInventoryItem toItem, Dictionary<int, DbInventoryItem> updatedItems)
-        {
-            // Assumes that neither stacks are full. If that's the case, `SwapItems` should be called instead.
-            int count = fromItem.Count + toItem.Count > fromItem.MaxCount ? toItem.MaxCount - toItem.Count : fromItem.Count;
-
-            if (IsHousingInventorySlot(fromClientSlot))
-            {
-                if (fromItem.Count - count <= 0)
-                {
-                    if (!GameServer.Database.DeleteObject(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
-                    }
-
-                    fromItem = null;
-                }
-                else
-                {
-                    fromItem.Count -= count;
-
-                    if (!GameServer.Database.SaveObject(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
-                    }
-                }
-            }
-            else if (IsBackpackSlot(fromClientSlot))
-            {
-                if (fromItem.Count - count <= 0)
-                {
-                    if (!player.Inventory.RemoveItem(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
-                    }
-
-                    fromItem = null;
-                }
-                else
+                bool SplitStackFromCharacterInventoryToHousingInventory()
                 {
                     if (!player.Inventory.RemoveCountFromStack(fromItem, count))
                     {
-                        SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
+                        thisObject.OnSaveError(player, nameof(SplitStackFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        return false;
                     }
+
+                    toItem.SlotPosition = toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDbSlot;
+                    toItem.OwnerID = thisObject.GetOwner();
+
+                    if (!SaveItem(toItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(SplitStackFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        return false;
+                    }
+
+                    thisObject.OnAddItem(player, toItem, fromItem.SlotPosition);
+                    player.Inventory.SaveIntoDatabase(player.InternalID);
+                    return true;
+                }
+
+                bool SplitStackFromHousingInventoryToHousingInventory()
+                {
+                    fromItem.Count -= count;
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(SplitStackFromHousingInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        return false;
+                    }
+
+                    toItem.SlotPosition = toClientSlot - thisObject.FirstClientSlot + thisObject.FirstDbSlot;
+                    toItem.OwnerID = thisObject.GetOwner();
+
+                    if (!SaveItem(toItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(SplitStackFromHousingInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        return false;
+                    }
+
+                    thisObject.OnAddItem(player, toItem, fromItem.SlotPosition);
+                    return true;
+                }
+
+                bool SplitStackFromHousingInventoryToCharacterInventory()
+                {
+                    fromItem.Count -= count;
+
+                    if (!SaveItem(fromItem) || !player.Inventory.AddItem(toClientSlot, toItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(SplitStackFromHousingInventoryToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, count);
+                        return false;
+                    }
+
+                    player.Inventory.SaveIntoDatabase(player.InternalID);
+                    return true;
                 }
             }
-            else
-            {
-                SendUnsupportedActionMessage(player);
-                return;
-            }
+        }
 
-            if (IsHousingInventorySlot(toClientSlot))
-            {
-                toItem.Count += count;
+        private static void StackItems(this IGameInventoryObject thisObject, GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, DbInventoryItem toItem, Dictionary<int, DbInventoryItem> updatedItems)
+        {
+            // Assumes that neither stacks are full. If that's the case, `SwapItems` should have been called instead.
+            int count = fromItem.Count + toItem.Count > fromItem.MaxCount ? toItem.MaxCount - toItem.Count : fromItem.Count;
 
-                if (!GameServer.Database.SaveObject(toItem))
+            if (IsBackpackSlot(fromClientSlot))
+            {
+                if (IsHousingInventorySlot(toClientSlot))
                 {
-                    SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    if (!StackItemsFromCharacterInventoryToHousingInventory())
+                        return;
+                }
+                else
+                {
+                    SendUnsupportedActionMessage(player);
                     return;
                 }
             }
-            else if (IsBackpackSlot(toClientSlot))
+            else if (IsHousingInventorySlot(fromClientSlot))
             {
-                if (!player.Inventory.AddCountToStack(toItem, count))
+                if (IsHousingInventorySlot(toClientSlot))
                 {
-                    SendErrorMessage(player, nameof(StackItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    if (!StackItemsFromHousingInventoryToHousingInventory())
+                        return;
+                }
+                else if (IsBackpackSlot(toClientSlot))
+                {
+                    if (!StackItemsFromHousingInventoryToCharacterInventory())
+                        return;
+                }
+                else
+                {
+                    SendUnsupportedActionMessage(player);
                     return;
                 }
             }
@@ -397,119 +398,258 @@ namespace DOL.GS
 
             updatedItems.Add((int) fromClientSlot, fromItem);
             updatedItems.Add((int) toClientSlot, toItem);
+
+            bool StackItemsFromCharacterInventoryToHousingInventory()
+            {
+                if (fromItem.Count - count <= 0)
+                {
+                    if (!player.Inventory.RemoveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                        return false;
+                    }
+
+                    fromItem = null;
+                }
+                else if (!player.Inventory.RemoveCountFromStack(fromItem, count))
+                {
+                    thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
+                }
+
+                toItem.Count += count;
+
+                if (!SaveItem(toItem))
+                {
+                    thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
+                }
+
+                player.Inventory.SaveIntoDatabase(player.InternalID);
+                return true;
+            }
+
+            bool StackItemsFromHousingInventoryToHousingInventory()
+            {
+                if (fromItem.Count - count <= 0)
+                {
+                    fromItem.Count = 0;
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                        return false;
+                    }
+
+                    thisObject.OnRemoveItem(player, fromItem, fromItem.SlotPosition);
+                    fromItem = null;
+                }
+                else
+                {
+                    fromItem.Count -= count;
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                        return false;
+                    }
+                }
+
+                toItem.Count += count;
+
+                if (!SaveItem(toItem))
+                {
+                    thisObject.OnSaveError(player, nameof(StackItemsFromCharacterInventoryToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
+                }
+
+                return true;
+            }
+
+            bool StackItemsFromHousingInventoryToCharacterInventory()
+            {
+                if (fromItem.Count - count <= 0)
+                {
+                    fromItem.Count = 0;
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(StackItemsFromHousingInventoryToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                        return false;
+                    }
+
+                    thisObject.OnRemoveItem(player, fromItem, fromItem.SlotPosition);
+                    fromItem = null;
+                }
+                else
+                {
+                    fromItem.Count -= count;
+
+                    if (!SaveItem(fromItem))
+                    {
+                        thisObject.OnSaveError(player, nameof(StackItemsFromHousingInventoryToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                        return false;
+                    }
+                }
+
+                if (!player.Inventory.AddCountToStack(toItem, count))
+                {
+                    thisObject.OnSaveError(player, nameof(StackItemsFromHousingInventoryToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
+                }
+
+                player.Inventory.SaveIntoDatabase(player.InternalID);
+                return true;
+            }
         }
 
         private static void SwapItems(this IGameInventoryObject thisObject, GamePlayer player, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, DbInventoryItem toItem, Dictionary<int, DbInventoryItem> updatedItems)
         {
-            if (IsHousingInventorySlot(fromClientSlot))
-            {
-                if (IsHousingInventorySlot(toClientSlot))
-                {
-                    int fromItemSlotPosition = fromItem.SlotPosition;
-                    fromItem.SlotPosition = toItem.SlotPosition;
-                    toItem.SlotPosition = fromItemSlotPosition;
-
-                    if (!GameServer.Database.SaveObject(fromItem))
-                    {
-                        SendErrorMessage(player, nameof(SwapItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
-                    }
-
-                    if (!GameServer.Database.SaveObject(toItem))
-                    {
-                        SendErrorMessage(player, nameof(SwapItems), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                        return;
-                    }
-
-                    updatedItems.Add((int) toClientSlot, fromItem);
-                    updatedItems.Add((int) fromClientSlot, toItem);
-                    return;
-                }
-
-                if (IsBackpackSlot(toClientSlot))
-                {
-                    // From housing inventory to backpack.
-                    SwapItemsFromOrToBackpack(fromClientSlot, toClientSlot, fromItem, toItem);
-                    return;
-                }
-
-                SendUnsupportedActionMessage(player);
-                return;
-            }
-
-            if (IsBackpackSlot(fromClientSlot))
+            if (IsCharacterInventorySlot(fromClientSlot))
             {
                 if (IsHousingInventorySlot(toClientSlot))
                 {
                     // From backpack to housing inventory.
-                    SwapItemsFromOrToBackpack(toClientSlot, fromClientSlot, toItem, fromItem);
+                    if (!SwapItemsFromOrToCharacterInventory(toClientSlot, fromClientSlot, toItem, fromItem))
+                        return;
+                }
+                else
+                {
+                    SendUnsupportedActionMessage(player);
                     return;
                 }
-
+            }
+            else if (IsHousingInventorySlot(fromClientSlot))
+            {
+                if (IsCharacterInventorySlot(toClientSlot))
+                {
+                    // From housing inventory to backpack.
+                    if (!SwapItemsFromOrToCharacterInventory(fromClientSlot, toClientSlot, fromItem, toItem))
+                        return;
+                }
+                else if (IsHousingInventorySlot(toClientSlot))
+                {
+                    if (!SwapItemsFromAndToHousingInventory())
+                        return;
+                }
+                else
+                {
+                    SendUnsupportedActionMessage(player);
+                    return;
+                }
+            }
+            else
+            {
                 SendUnsupportedActionMessage(player);
                 return;
             }
 
-            SendUnsupportedActionMessage(player);
+            updatedItems.Add((int) toClientSlot, fromItem);
+            updatedItems.Add((int) fromClientSlot, toItem);
 
-            void SwapItemsFromOrToBackpack(eInventorySlot vaultSlot, eInventorySlot backpackSlot, DbInventoryItem vaultItem, DbInventoryItem backpackItem)
+            bool SwapItemsFromOrToCharacterInventory(eInventorySlot vaultSlot, eInventorySlot characterInventorySlot, DbInventoryItem vaultItem, DbInventoryItem characterInventoryItem)
             {
-                if (!thisObject.OnAddItem(player, backpackItem))
+                if (!player.Inventory.CheckItemsBeforeMovingFromOrToExternalInventory(vaultItem, characterInventoryItem, vaultSlot, characterInventorySlot, 0))
+                    return false;
+
+                if (!player.Inventory.RemoveItemWithoutDbDeletion(characterInventoryItem))
                 {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
+                    thisObject.OnSaveError(player, nameof(SwapItemsFromOrToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
                 }
 
-                if (!player.Inventory.RemoveTradeItem(backpackItem))
+                int characterInventoryItemPreviousSlotPosition = characterInventoryItem.SlotPosition;
+                characterInventoryItem.SlotPosition = vaultItem.SlotPosition;
+                characterInventoryItem.OwnerID = thisObject.GetOwner();
+
+                if (!SaveItem(characterInventoryItem))
                 {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
+                    thisObject.OnSaveError(player, nameof(SwapItemsFromOrToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
                 }
 
-                backpackItem.SlotPosition = vaultItem.SlotPosition;
-                backpackItem.OwnerID = thisObject.GetOwner(player);
+                int previousSlot = vaultItem.SlotPosition;
 
-                if (!GameServer.Database.SaveObject(backpackItem))
+                if (!player.Inventory.AddItemWithoutDbAddition(characterInventorySlot, vaultItem) || !SaveItem(vaultItem))
                 {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
+                    thisObject.OnSaveError(player, nameof(SwapItemsFromOrToCharacterInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
                 }
 
-                if (!thisObject.OnRemoveItem(player, vaultItem))
+                thisObject.OnMoveItem(player, characterInventoryItem, characterInventoryItemPreviousSlotPosition, vaultItem, previousSlot);
+                player.Inventory.OnItemMove(fromItem, toItem, fromClientSlot, toClientSlot);
+                player.Inventory.SaveIntoDatabase(player.InternalID);
+                return true;
+            }
+
+            bool SwapItemsFromAndToHousingInventory()
+            {
+                (toItem.SlotPosition, fromItem.SlotPosition) = (fromItem.SlotPosition, toItem.SlotPosition);
+
+                if (!SaveItem(fromItem) || !SaveItem(toItem))
                 {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
+                    thisObject.OnSaveError(player, nameof(SwapItemsFromAndToHousingInventory), fromClientSlot, toClientSlot, fromItem, toItem, 0);
+                    return false;
                 }
 
-                if (!player.Inventory.AddTradeItem(backpackSlot, vaultItem))
-                {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
-                }
-
-                if (!GameServer.Database.SaveObject(vaultItem))
-                {
-                    SendErrorMessage(player, nameof(SwapItemsFromOrToBackpack), fromClientSlot, toClientSlot, fromItem, toItem, 0);
-                    return;
-                }
-
-                updatedItems.Add((int) vaultSlot, backpackItem);
-                updatedItems.Add((int) backpackSlot, vaultItem);
+                thisObject.OnMoveItem(player, fromItem, toItem.SlotPosition, toItem, fromItem.SlotPosition);
+                return true;
             }
         }
 
-        private static bool IsHousingInventorySlot(eInventorySlot slot)
+        public static bool SaveItem(DbInventoryItem item)
+        {
+            // Failsafe in case count wasn't properly tracked.
+            // We might also be able to ignore `IsStackable`, but I'm not sure non stackable items always have a non 0 count.
+            if (item.IsStackable && item.Count == 0)
+                return DeleteItem(item);
+
+            bool result = item.IsPersisted ? GameServer.Database.SaveObject(item) : GameServer.Database.AddObject(item);
+
+            if (!result)
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Couldn't save or add an item with {nameof(DataObject.IsPersisted)}={item.IsPersisted}. Attempting to call the other method instead.");
+
+                result = item.IsPersisted ? GameServer.Database.AddObject(item) : GameServer.Database.SaveObject(item);
+            }
+
+            return result;
+        }
+
+        public static bool DeleteItem(DbInventoryItem item)
+        {
+            return GameServer.Database.DeleteObject(item);
+        }
+
+        public static bool IsHousingInventorySlot(eInventorySlot slot)
         {
             return slot is >= eInventorySlot.HousingInventory_First and <= eInventorySlot.HousingInventory_Last;
         }
 
-        private static bool IsBackpackSlot(eInventorySlot slot)
+        public static bool IsBackpackSlot(eInventorySlot slot)
         {
             return slot is >= eInventorySlot.FirstBackpack and <= eInventorySlot.LastBackpack;
         }
 
-        private static void SendErrorMessage(GamePlayer player, string method, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, DbInventoryItem toItem, ushort count)
+        public static bool IsEquipmentSlot(eInventorySlot slot)
         {
+            return slot is >= eInventorySlot.MinEquipable and <= eInventorySlot.MaxEquipable;
+        }
+
+        public static bool IsCharacterVaultSlot(eInventorySlot slot)
+        {
+            return slot is >= eInventorySlot.FirstVault and <= eInventorySlot.LastVault;
+        }
+
+        public static bool IsCharacterInventorySlot(eInventorySlot slot)
+        {
+            return IsBackpackSlot(slot) || IsEquipmentSlot(slot);
+        }
+
+        private static void OnSaveError(this IGameInventoryObject thisObject, GamePlayer player, string method, eInventorySlot fromClientSlot, eInventorySlot toClientSlot, DbInventoryItem fromItem, DbInventoryItem toItem, ushort count)
+        {
+            thisObject.OnItemManipulationError(player);
             player.Out.SendMessage($"Error while moving an item in '{method}':", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
             player.Out.SendMessage($"- [{fromItem?.Name}] [{fromClientSlot}] ({count})", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
             player.Out.SendMessage($"- [{toItem?.Name}] [{toClientSlot}]", eChatType.CT_Important, eChatLoc.CL_SystemWindow);

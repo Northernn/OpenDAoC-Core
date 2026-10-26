@@ -39,15 +39,8 @@ namespace DOL.GS
 		{
 			get { return 30000; }
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -55,7 +48,7 @@ namespace DOL.GS
 
 			return base.HasAbility(keyName);
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(CurrentRegionID))
 			{
@@ -67,7 +60,7 @@ namespace DOL.GS
 					}
 				}
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
         public override bool AddToWorld()
 		{
@@ -83,14 +76,11 @@ namespace DOL.GS
 			Piety = 150;
 			Intelligence = 150;
 			Empathy = 300;
-			MaxDistance = 3500;
 			TetherRange = 3500;
 			MeleeDamageType = eDamageType.Crush;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(150);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(150));
-			RiftBrain.IsValkyn = false;
 
 			RiftBrain sbrain = new RiftBrain();
 			SetOwnBrain(sbrain);
@@ -101,20 +91,21 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class RiftBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public RiftBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsPulled = false;
-		public static bool IsValkyn = false;
-		public static bool IsRift = false;
+		public bool IsPulled = false;
+		public bool IsValkyn = false;
+		public bool IsRift = false;
 		public void ChangeAppearance()
         {
 			if (!HasAggro && Body.IsAlive && IsValkyn == false)
@@ -199,7 +190,7 @@ namespace DOL.AI.Brain
 			}
 			base.Think();
 		}
-		public static bool SpawnMoreAdds = false;
+		public bool SpawnMoreAdds = false;
 		public int SpawnAdds(ECSGameTimer timer)
         {
 			if (Body.IsAlive && HasAggro && IsRift)
@@ -240,7 +231,6 @@ namespace DOL.AI.Brain
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_RiftDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_RiftDD);
 				}
 				return m_RiftDD;
 			}
@@ -264,6 +254,7 @@ namespace DOL.AI.Brain
 		}
 	}
 }
+
 namespace DOL.GS
 {
 	public class Morkenhet : GameNPC
@@ -278,10 +269,7 @@ namespace DOL.GS
 				default: return 35; // dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 300;
@@ -310,7 +298,6 @@ namespace DOL.GS
 			Size = (byte)Util.Random(50, 60);
 			Level = (byte)Util.Random(58, 62);
 			Faction = FactionMgr.GetFactionByID(150);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(150));
 			MorkenhetBrain add = new MorkenhetBrain();
 			SetOwnBrain(add);
 			base.AddToWorld();

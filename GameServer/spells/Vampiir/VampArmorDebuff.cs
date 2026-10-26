@@ -25,7 +25,7 @@ using DOL.GS.PacketHandler;
 
 namespace DOL.GS.Spells
 {
-	[SpellHandlerAttribute("VampiirArmorDebuff")]
+	[SpellHandler(eSpellType.VampiirArmorDebuff)]
 	public class VampiirArmorDebuff : SpellHandler
 	{
 		private static eArmorSlot[] slots = new eArmorSlot[] { eArmorSlot.HEAD, eArmorSlot.TORSO, eArmorSlot.LEGS,  };
@@ -65,9 +65,8 @@ namespace DOL.GS.Spells
 				if(item.DPS_AF<0) item.DPS_AF=0;
 				if(item.SPD_ABS<0) item.SPD_ABS=0;
 			
-				player.Client.Out.SendInventoryItemsUpdate(new DbInventoryItem[] { item });
+				player.Client.Out.SendInventoryItemsUpdate([item]);
 				player.Out.SendCharStatsUpdate();
-				player.UpdatePlayerStatus();
 				player.Out.SendUpdatePlayer();
 				player.Out.SendUpdateWeaponAndArmorStats();
 				player.Out.SendCharResistsUpdate();
@@ -103,9 +102,8 @@ namespace DOL.GS.Spells
 			item.DPS_AF=old_item_af;
 			item.SPD_ABS=old_item_abs;
 			
-			player.Client.Out.SendInventoryItemsUpdate(new DbInventoryItem[] { item });
+			player.Client.Out.SendInventoryItemsUpdate([item]);
 			player.Out.SendCharStatsUpdate();
-			player.UpdatePlayerStatus();
 			player.Out.SendUpdatePlayer();
 			player.Out.SendUpdateWeaponAndArmorStats();
 			player.Out.SendCharResistsUpdate();
@@ -123,7 +121,7 @@ namespace DOL.GS.Spells
 			{
 				var list = new List<string>(16);
 				list.Add("Name: " + Spell.Name+"\n");
-				list.Add("Description: " + Spell.Description+"\n");
+				list.Add("Description: " + ShortDescription+"\n");
 				list.Add("Target: " + Spell.Target);
 				list.Add("Casting time: " + (Spell.CastTime*0.001).ToString("0.0## sec;-0.0## sec;'instant'"));
 				if (Spell.Duration >= ushort.MaxValue*1000)

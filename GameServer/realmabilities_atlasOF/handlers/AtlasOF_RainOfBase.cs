@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using DOL.Database;
 using DOL.GS.Effects;
 using DOL.GS.Spells;
@@ -24,22 +25,22 @@ namespace DOL.GS.RealmAbilities
 
         public override void AddEffectsInfo(IList<string> list)
         {
+            list.Add($"Value: {Math.Abs(GetDamageAddAmount())}%");
             list.Add("Target: Self");
-            list.Add("Duration: 60 sec");
+            list.Add($"Duration: {duration / 1000} sec");
             list.Add("Casting time: instant");
         }
-        
+
         protected virtual void Execute(string name, int icon, int clientEffect, int damageType, GameLiving living)
         {
             if (CheckPreconditions(living, DEAD | SITTING | MEZZED | STUNNED))
                 return;
-            if (living is GamePlayer)
-                CreateSpell(name, icon, clientEffect, damageType, GetDamageAddAmount(living));
-           
-            ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(living, m_spell, m_spellline);
-            spellHandler.IgnoreDamageCap = true;
 
-            new AtlasOF_RainOfBaseECSEffect(new ECSGameEffectInitParams(living, duration, 1, spellHandler));
+            if (living is GamePlayer)
+                CreateSpell(name, icon, clientEffect, damageType, GetDamageAddAmount());
+
+            ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(living, m_spell, m_spellline);
+            ECSGameEffectFactory.Create(new(living, duration, 1, spellHandler), static (in i) => new AtlasOF_RainOfBaseECSEffect(i));
             DisableSkill(living);
         }
 
@@ -65,20 +66,16 @@ namespace DOL.GS.RealmAbilities
                 Range = 0
             };
             m_spell = new Spell(m_dbspell, 0); // make spell level 0 so it bypasses the spec level adjustment code
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
-        
-        private double GetDamageAddAmount(GameLiving caster)
-        {
-            if (caster == null)
-                return 0;
 
-            // Previously was "caster.AttackWeapon.DPS_AF * caster.AttackWeapon.SPD_ABS * .1 * .1 * Level * .1"
+        private double GetDamageAddAmount()
+        {
             return Level switch
             {
-                1 => 10,
-                2 => 20,
-                3 => 30,
+                1 => -10,
+                2 => -20,
+                3 => -30,
                 _ => 0,
             };
         }

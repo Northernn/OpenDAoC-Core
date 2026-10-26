@@ -1,46 +1,62 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
-using System.Threading.Tasks;
+using System.Threading;
+using DOL.Logging;
 using ECS.Debug;
-using log4net;
 
 namespace DOL.GS
 {
-    public static class CastingService
+    public sealed class CastingService : GameServiceBase
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-        private const string SERVICE_NAME = nameof(CastingService);
-        private static List<CastingComponent> _list;
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static void Tick()
+        private ServiceObjectView<CastingComponent> _view;
+
+        public static CastingService Instance { get; }
+
+        static CastingService()
         {
-            GameLoop.CurrentServiceTick = SERVICE_NAME;
-            Diagnostics.StartPerfCounter(SERVICE_NAME);
-            _list = EntityManager.UpdateAndGetAll<CastingComponent>(EntityManager.EntityType.CastingComponent, out int lastValidIndex);
-            Parallel.For(0, lastValidIndex + 1, TickInternal);
-            Diagnostics.StopPerfCounter(SERVICE_NAME);
+            Instance = new();
         }
 
-        private static void TickInternal(int index)
+        public override void Tick()
         {
-            CastingComponent castingComponent = _list[index];
+            ProcessPostedActionsParallel();
 
             try
             {
-                if (castingComponent?.EntityManagerId.IsSet != true)
-                    return;
-
-                long startTick = GameLoop.GetCurrentTime();
-                castingComponent.Tick();
-                long stopTick = GameLoop.GetCurrentTime();
-
-                if (stopTick - startTick > 25)
-                    log.Warn($"Long {SERVICE_NAME}.{nameof(Tick)} for: {castingComponent.Owner.Name}({castingComponent.Owner.ObjectID}) Spell: {castingComponent.SpellHandler?.Spell?.Name} Time: {stopTick - startTick}ms");
+                _view = ServiceObjectStore.UpdateAndGetView<CastingComponent>(ServiceObjectType.CastingComponent);
             }
             catch (Exception e)
             {
-                ServiceUtils.HandleServiceException(e, SERVICE_NAME, castingComponent, castingComponent.Owner);
+                if (log.IsErrorEnabled)
+                    log.Error($"{nameof(ServiceObjectStore.UpdateAndGetView)} failed. Skipping this tick.", e);
+
+                return;
+            }
+
+            _view.ExecuteForEach(TickInternal);
+
+            if (Diagnostics.CheckServiceObjectCount)
+                Diagnostics.PrintServiceObjectCount(ServiceName, ref EntityCount, _view.TotalValidCount);
+        }
+
+        private static void TickInternal(CastingComponent castingComponent)
+        {
+            try
+            {
+                if (Diagnostics.CheckServiceObjectCount)
+                    Interlocked.Increment(ref Instance.EntityCount);
+
+                TickMonitor monitor = new();
+                castingComponent.Tick();
+
+                if (monitor.IsLongTick(out long elapsedMs) && log.IsWarnEnabled)
+                    log.Warn($"Long {Instance.ServiceName}.{nameof(Tick)} for {castingComponent.Owner.Name}({castingComponent.Owner.ObjectID}) Spell: {castingComponent.SpellHandler?.Spell?.Name} Time: {elapsedMs}ms");
+            }
+            catch (Exception e)
+            {
+                GameServiceUtils.HandleServiceException(e, Instance.ServiceName, castingComponent, castingComponent.Owner);
             }
         }
     }

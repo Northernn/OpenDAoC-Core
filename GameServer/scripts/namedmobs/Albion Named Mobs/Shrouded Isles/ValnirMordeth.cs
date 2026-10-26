@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -9,6 +10,7 @@ namespace DOL.GS
 	public class ValnirMordeth : GameEpicBoss
 	{
 		public ValnirMordeth() : base() { }
+		public readonly List<GameNPC> EssenceGhouls = new List<GameNPC>();
 
 		[ScriptLoadedEvent]
 		public static void ScriptLoaded(DOLEvent e, object sender, EventArgs args)
@@ -26,15 +28,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -59,17 +54,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(700000014);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 			canSpawnAdds = false;
 			if(canSpawnAdds==false)
             {
@@ -83,18 +70,19 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(5000))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is ValnirMordethAddBrain)
 					npc.Die(this);
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
         private bool canSpawnAdds = false;
 		private void SpawnAdds()
         {
+			EssenceGhouls.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not eObjectState.Active);
 			for (int i = 0; i < Util.Random(2, 3); i++)
 			{
 				ValnirMordethAdd add = new ValnirMordethAdd();
@@ -105,6 +93,7 @@ namespace DOL.GS
 				add.CurrentRegion = CurrentRegion;
 				add.PackageID = "MordethBaf";
 				add.AddToWorld();
+				EssenceGhouls.Add(add);
 			}
 		}
 		public override void OnAttackEnemy(AttackData ad)
@@ -146,7 +135,6 @@ namespace DOL.GS
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Body;
 					m_ValnirLifeDrain = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ValnirLifeDrain);
 				}
 				return m_ValnirLifeDrain;
 			}
@@ -157,7 +145,7 @@ namespace DOL.AI.Brain
 {
 	public class ValnirMordethBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ValnirMordethBrain() : base()
 		{
 			AggroLevel = 100;
@@ -210,7 +198,7 @@ namespace DOL.AI.Brain
 							Body.StopFollowing();
 					}
 					Body.TurnTo(Body.TargetObject);
-					if (Util.Chance(25) && !Body.IsCasting && !target.effectListComponent.ContainsEffectForEffectType(eEffect.DamageOverTime))
+					if (Util.Chance(25) && !Body.IsCasting && !target.IsPoisoned)
 						Body.CastSpell(Valnir_Dot, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells), false);
 					if (Util.Chance(25) && !Body.IsCasting && !target.effectListComponent.ContainsEffectForEffectType(eEffect.Disease))
 						Body.CastSpell(ValnirDisease, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells), false);
@@ -223,10 +211,24 @@ namespace DOL.AI.Brain
 			}
 			base.Think();
 		}
+		private int AliveEssenceGhoulCount()
+		{
+			if (Body is not ValnirMordeth mordeth)
+				return 0;
+
+			int count = 0;
+			foreach (GameNPC npc in mordeth.EssenceGhouls)
+			{
+				if (npc != null && npc.IsAlive && npc.ObjectState is GameObject.eObjectState.Active)
+					++count;
+			}
+			return count;
+		}
 		private int SpawnAdds(ECSGameTimer timer)
 		{
-			if (Body.IsAlive && HasAggro && ValnirMordethAdd.EssenceGhoulCount == 0)
+			if (Body.IsAlive && HasAggro && AliveEssenceGhoulCount() == 0 && Body is ValnirMordeth mordeth)
 			{
+				mordeth.EssenceGhouls.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
 				ValnirMordethAdd add = new ValnirMordethAdd();
 				add.X = Body.X + Util.Random(-100, 100);
 				add.Y = Body.Y + Util.Random(-100, 100);
@@ -235,14 +237,16 @@ namespace DOL.AI.Brain
 				add.CurrentRegion = Body.CurrentRegion;
 				add.PackageID = "MordethAdds";
 				add.AddToWorld();
+				mordeth.EssenceGhouls.Add(add);
 			}
 			CanSpawnMoreGhouls = false;
 			return 0;
 		}
 		private void SpawnAddsAfterCombat()
         {
-			if (!HasAggro && ValnirMordethAdd.EssenceGhoulCount == 0)
+			if (!HasAggro && AliveEssenceGhoulCount() == 0 && Body is ValnirMordeth mordeth)
 			{
+				mordeth.EssenceGhouls.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
 				for (int i = 0; i < Util.Random(2, 3); i++)
 				{
 					ValnirMordethAdd add = new ValnirMordethAdd();
@@ -253,6 +257,7 @@ namespace DOL.AI.Brain
 					add.CurrentRegion = Body.CurrentRegion;
 					add.PackageID = "MordethBaf";
 					add.AddToWorld();
+					mordeth.EssenceGhouls.Add(add);
 				}
 			}
 		}
@@ -282,14 +287,13 @@ namespace DOL.AI.Brain
 					spell.Duration = 40;
 					spell.Frequency = 40;
 					spell.SpellID = 11903;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.SpellGroup = 1800;
 					spell.EffectGroup = 1500;
 					spell.Type = eSpellType.DamageOverTime.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Matter;
 					m_Valnir_Dot = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Valnir_Dot);
 				}
 				return m_Valnir_Dot;
 			}
@@ -316,13 +320,12 @@ namespace DOL.AI.Brain
 					spell.Range = 1500;
 					spell.Duration = 120;
 					spell.SpellID = 11904;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "Disease";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
 					m_ValnirDisease = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ValnirDisease);
 				}
 				return m_ValnirDisease;
 			}
@@ -347,15 +350,8 @@ namespace DOL.GS
 				default: return 20;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -376,7 +372,6 @@ namespace DOL.GS
         public override short Intelligence { get => base.Intelligence; set => base.Intelligence = 200; }
         public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
         public override short Strength { get => base.Strength; set => base.Strength = 120; }
-		public static int EssenceGhoulCount = 0;
         public override bool AddToWorld()
 		{
 			Model = 921;
@@ -385,10 +380,8 @@ namespace DOL.GS
 			Size = (byte)Util.Random(55, 65);
 			MaxSpeedBase = 225;
 			RespawnInterval = -1;
-			++EssenceGhoulCount;
 
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			ValnirMordethAddBrain sbrain = new ValnirMordethAddBrain();
 			SetOwnBrain(sbrain);
@@ -397,14 +390,7 @@ namespace DOL.GS
 			return true;
 		}
         public override long ExperienceValue => 0;
-        public override void DropLoot(GameObject killer)
-        {
-        }
-        public override void Die(GameObject killer)
-        {
-			--EssenceGhoulCount;
-            base.Die(killer);
-        }
+        public override bool CanDropLoot => false;
         public override void DealDamage(AttackData ad)
 		{
 			if (ad != null && ad.AttackType == AttackData.eAttackType.Spell && ad.Damage > 0)
@@ -424,7 +410,7 @@ namespace DOL.AI.Brain
 {
 	public class ValnirMordethAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ValnirMordethAddBrain() : base()
 		{
 			AggroLevel = 100;
@@ -473,7 +459,6 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Body;
 					m_ValnirAddLifeDrain = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ValnirAddLifeDrain);
 				}
 				return m_ValnirAddLifeDrain;
 			}

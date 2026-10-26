@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -10,6 +11,7 @@ namespace DOL.GS
 	public class AbomosSoultrapper : GameEpicBoss
 	{
 		public AbomosSoultrapper() : base() { }
+		public readonly List<GameNPC> Adds = new List<GameNPC>();
 
 		[ScriptLoadedEvent]
 		public static void ScriptLoaded(DOLEvent e, object sender, EventArgs args)
@@ -78,15 +80,7 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -98,17 +92,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60157522);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(93);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(93));
 			GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
 			template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 841, 0, 0, 0);
 			Inventory = template.CloseTemplate();
@@ -149,7 +135,6 @@ namespace DOL.GS
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_LifedrainProc = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_LifedrainProc);
 				}
 				return m_LifedrainProc;
 			}
@@ -160,7 +145,7 @@ namespace DOL.AI.Brain
 {
 	public class AbomosSoultrapperBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public AbomosSoultrapperBrain() : base()
 		{
 			AggroLevel = 100;
@@ -200,9 +185,14 @@ namespace DOL.AI.Brain
 		}
 		public void SpawnAdds()
 		{
+			if (Body is not AbomosSoultrapper abomos)
+				return;
+
+			abomos.Adds.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+			int addsCount = abomos.Adds.Count;
 			for (int i = 0; i < 2; i++)
 			{
-				if (AbomosAdd.AddsCount < 3)
+				if (addsCount < 3)
 				{
 					AbomosAdd Add1 = new AbomosAdd();
 					Add1.X = Body.X;
@@ -212,6 +202,8 @@ namespace DOL.AI.Brain
 					Add1.Heading = Body.Heading;
 					Add1.RespawnInterval = -1;
 					Add1.AddToWorld();
+					abomos.Adds.Add(Add1);
+					++addsCount;
 				}
 			}
 		}
@@ -225,15 +217,7 @@ namespace DOL.GS
 		public AbomosAdd() : base()
 		{
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 300;
@@ -247,29 +231,19 @@ namespace DOL.GS
 		{
 			get { return 5000; }
 		}
-		public static int AddsCount= 0;
-		public override void Die(GameObject killer)
-		{
-			--AddsCount;
-			base.Die(killer);
-		}
-		public override void DropLoot(GameObject killer) //no loot
-		{
-		}
+		public override bool CanDropLoot => false;
 		public override long ExperienceValue => 0;
 		public override bool AddToWorld()
 		{
 			Model = 826;
 			Name = "Abomos Servant";
 			RespawnInterval = -1;
-			++AddsCount;
 
 			Size = (byte)Util.Random(80, 100);
 			Level = (byte)Util.Random(50,55);
 			MaxSpeedBase = 200;
 
 			Faction = FactionMgr.GetFactionByID(93);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(93));
 			Realm = eRealm.None;
 
 			Strength = 100;
@@ -292,8 +266,7 @@ namespace DOL.AI.Brain
 {
 	public class AbomosAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log =
-			log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		public AbomosAddBrain()
 			: base()

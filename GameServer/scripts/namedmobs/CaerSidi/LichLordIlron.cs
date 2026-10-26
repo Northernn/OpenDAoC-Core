@@ -33,16 +33,9 @@ namespace DOL.GS.Scripts
 
         public override int MaxHealth => 100000;
         
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
 
-        public override int AttackRange
-        {
-            get => 180;
-            set { }
-        }
+
+        public override int MeleeAttackRange => 180;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == "CCImmunity")
@@ -55,44 +48,35 @@ namespace DOL.GS.Scripts
             Level = 79;
             Gender = eGender.Neutral;
             BodyType = 11; // undead
-            MaxDistance = 1500;
             TetherRange = 2000;
             RoamingRange = 400;
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(64);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60163266);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
 
             LichLordIlronBrain sBrain = new LichLordIlronBrain();
             SetOwnBrain(sBrain);
             sBrain.AggroLevel = 100;
             sBrain.AggroRange = 500;
 
-            LichLordIlronBrain.spawnimages = true;
+            sBrain.spawnimages = true;
             LoadedFromScript = false;//load from database
             SaveIntoDatabase();
             base.AddToWorld();
             return true;
         }
 
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
-            base.Die(killer);
-
             foreach (GameNPC npc in GetNPCsInRadius(4000))
             {
                 if (npc.Brain is IlronImagesBrain)
                     npc.RemoveFromWorld();
             }
+
+            base.ProcessDeath(killer);
         }
 
         [ScriptLoadedEvent]
@@ -108,10 +92,9 @@ namespace DOL.AI.Brain
 {
     public class LichLordIlronBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static bool spawnimages = true;
+        public bool spawnimages = true;
 
         public override void Think()
         {
@@ -137,7 +120,7 @@ namespace DOL.AI.Brain
                 Spawn(); // spawn images
                 foreach (GameNPC mob_c in Body.GetNPCsInRadius(2000))
                 {
-                    if (mob_c?.Brain is IlronImagesBrain && mob_c.IsAlive && mob_c.IsAvailable)
+                    if (mob_c?.Brain is IlronImagesBrain && mob_c.IsAlive && mob_c.IsAvailableToJoinFight)
                     {
                         AddAggroListTo(mob_c.Brain as IlronImagesBrain);
                     }
@@ -164,7 +147,6 @@ namespace DOL.AI.Brain
                 Add.Y = Body.Y + Util.Random(-100, 100);
                 Add.Z = Body.Z;
                 Add.CurrentRegion = Body.CurrentRegion;
-                Add.IsWorthReward = false;
                 Add.Heading = Body.Heading;
                 Add.AddToWorld();
             }
@@ -210,11 +192,8 @@ namespace DOL.GS
             Level = 70;
             RoamingRange = 350;
             RespawnInterval = -1;
-            MaxDistance = 1500;
             TetherRange = 2000;
             Faction = FactionMgr.GetFactionByID(64);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
-            IsWorthReward = false; // worth no reward
             Flags ^= eFlags.GHOST;
             Realm = eRealm.None;
             IlronImagesBrain adds = new IlronImagesBrain();
@@ -224,9 +203,7 @@ namespace DOL.GS
             return true;
         }
 
-        public override void DropLoot(GameObject killer) //no loot
-        {
-        }
+        public override bool CanDropLoot => false;
 
         public override void Die(GameObject killer)
         {
@@ -239,8 +216,7 @@ namespace DOL.AI.Brain
 {
     public class IlronImagesBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public IlronImagesBrain()
         {
@@ -278,13 +254,12 @@ namespace DOL.AI.Brain
                     spell.Radius = 300;
                     spell.SpellID = 99999;
                     spell.Duration = 30;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "Mesmerize";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int) eDamageType.Spirit; //Spirit DMG Type
                     m_mezSpell = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_mezSpell);
                 }
 
                 return m_mezSpell;

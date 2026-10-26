@@ -1,26 +1,7 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
 using System;
-using DOL.GS;
-using DOL.GS.PacketHandler;
-using DOL.GS.Effects;
 using DOL.Events;
+using DOL.GS.Effects;
+using DOL.GS.PlayerClass;
 
 namespace DOL.GS.Spells
 {
@@ -30,7 +11,7 @@ namespace DOL.GS.Spells
     /// </summary>
     
     //the self dream-morph doesnt break on damage/attacked by enemy only grp-target 1 does
-    [SpellHandlerAttribute("DreamMorph")]
+    [SpellHandler(eSpellType.DreamMorph)]
     public class DreamMorph : OffensiveProcSpellHandler
 	{   	
 		public override void OnEffectStart(GameSpellEffect effect)
@@ -52,7 +33,7 @@ namespace DOL.GS.Spells
                         return;
                     }
                 }
-				if(player.CharacterClass.ID!=(byte)eCharacterClass.Necromancer && (ushort)Spell.LifeDrainReturn > 0) 
+				if(player.CharacterClass is not ClassDisciple && (ushort)Spell.LifeDrainReturn > 0)
                     player.Model = (ushort)Spell.LifeDrainReturn;
 				player.Out.SendUpdatePlayer();
 			}
@@ -62,10 +43,11 @@ namespace DOL.GS.Spells
 		{
 			if(effect.Owner is GamePlayer)
 			{
-				GamePlayer player=effect.Owner as GamePlayer; 				
-				if(player.CharacterClass.ID!=(byte)eCharacterClass.Necromancer) player.Model = player.CreationModel;
+				GamePlayer player=effect.Owner as GamePlayer;
+				if(player.CharacterClass is not ClassDisciple)
+                    player.Model = player.CreationModel;
 				player.Out.SendUpdatePlayer();
-			}	
+			}
 			return base.OnEffectExpires(effect,noMessages);
 		}
 
@@ -84,7 +66,7 @@ namespace DOL.GS.Spells
 
     //http://www.daoc-toa.net/img/dreamPrey.jpg
     //http://www.daoc-toa.net/img/dreamCat.jpg
-    [SpellHandlerAttribute("DreamGroupMorph")]
+    [SpellHandler(eSpellType.DreamGroupMorph)]
     public class DreamGroupMorph : DreamMorph
     {
     	private GameSpellEffect m_effect = null;

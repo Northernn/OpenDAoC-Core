@@ -1,22 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using DOL.AI.Brain;
 using DOL.GS.Effects;
@@ -27,10 +8,10 @@ namespace DOL.GS.Spells
     /// <summary>
     /// Zo' Arkat summoning
     /// </summary>
-    [SpellHandlerAttribute("ZoSummon")]
+    [SpellHandler(eSpellType.ZoSummon)]
     public class BracerOfZo : SpellHandler
     {
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		public override bool IsUnPurgeAble { get { return true; } }
 		
@@ -48,7 +29,7 @@ namespace DOL.GS.Spells
 			{
 				String errorMessage = String.Format("NPC template {0} is missing, spell ID = {1}", Spell.LifeDrainReturn, Spell.ID);
 				if (log.IsWarnEnabled) log.Warn(errorMessage);
-				if (player.Client.Account.PrivLevel > 1) MessageToCaster(errorMessage, eChatType.CT_Skill);
+				if (player.Client.Account.PrivLevel > 1) MessageToCaster(errorMessage, eChatType.CT_Items);
 				return;
 			}
 
@@ -64,11 +45,10 @@ namespace DOL.GS.Spells
                 deamons[i].CurrentRegion = Caster.CurrentRegion;
                 deamons[i].Heading = (ushort)((Caster.Heading + 2048) % 4096);
                 deamons[i].Realm = Caster.Realm;
-                deamons[i].CurrentSpeed = 0;
                 deamons[i].Level = 36;
                 deamons[i].Flags |= GameNPC.eFlags.FLYING;
                 deamons[i].AddToWorld();
-				(deamons[i].Brain as IOldAggressiveBrain).AddToAggroList(Caster.TargetObject as GameLiving, 1);
+				(deamons[i].Brain as IOldAggressiveBrain).AddToAggroList(Caster.TargetObject as GameLiving);
 				(deamons[i].Brain as ProcPetBrain).Think();
             }			
 		}
@@ -86,11 +66,12 @@ namespace DOL.GS.Spells
             }
             return base.OnEffectExpires(effect,noMessages);
         }
-        public override int CalculateSpellResistChance(GameLiving target) { return 0; }
+
+        public override double CalculateSpellResistChance(GameLiving target) { return 0; }
         public BracerOfZo(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) { }
     }
-    
-    [SpellHandlerAttribute("Bedazzlement")]
+
+    [SpellHandler(eSpellType.Bedazzlement)]
     public class ZoDebuffSpellHandler : DualStatDebuff
     {
 		public override eProperty Property1 { get { return eProperty.FumbleChance; } }

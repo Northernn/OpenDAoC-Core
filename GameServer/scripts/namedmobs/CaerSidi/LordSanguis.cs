@@ -1,15 +1,19 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Numerics;
 using DOL.AI.Brain;
 using DOL.Events;
 using DOL.Database;
 using DOL.GS;
 using DOL.GS.PacketHandler;
+using OpenDAoC.Pathing;
+using static DOL.GS.Pathfinder;
 
 namespace DOL.GS
 {
     public class LordSanguis : GameEpicBoss
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public LordSanguis()
             : base()
         {
@@ -24,26 +28,19 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100  * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int MaxHealth
         {
             get { return 100000; }
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -76,13 +73,6 @@ namespace DOL.GS
             }
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60163412);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
 
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             LordSanguisBrain sbrain = new LordSanguisBrain();
@@ -91,7 +81,7 @@ namespace DOL.GS
             return true;
         }
 
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             if (Spawn_Lich_Lord == false)
             {
@@ -101,10 +91,10 @@ namespace DOL.GS
                 Spawn_Lich_Lord = true;
             }
 
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
 
-        public static bool Spawn_Lich_Lord = false;
+        public bool Spawn_Lich_Lord = false;
 
         public int SpawnLich(ECSGameTimer timer)
         {
@@ -120,12 +110,22 @@ namespace DOL.GS
 
         public void SpawnMages()
         {
+            Vector3 position = new(X, Y, Z);
+            Zone zone = CurrentZone;
+            bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+            EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+
             for (int i = 0; i < Util.Random(2, 4); i++) // Spawn 2-4 mages
             {
+                // Pick positions on the navmesh whenever possible, so that mages can't spawn inside walls.
+                Vector3 spawnPoint = usePathfinding ?
+                    PathfindingProvider.Instance.GetRandomPoint(zone, position, 80, filters) ?? position :
+                    new(X + Util.Random(-50, 80), Y + Util.Random(-50, 80), Z);
+
                 BloodMage Add = new BloodMage();
-                Add.X = X + Util.Random(-50, 80);
-                Add.Y = Y + Util.Random(-50, 80);
-                Add.Z = Z;
+                Add.X = (int) spawnPoint.X;
+                Add.Y = (int) spawnPoint.Y;
+                Add.Z = (int) spawnPoint.Z;
                 Add.CurrentRegion = CurrentRegion;
                 Add.Heading = Heading;
                 Add.AddToWorld();
@@ -152,13 +152,11 @@ namespace DOL.GS
 
                 CO.MeleeDamageType = eDamageType.Crush;
                 CO.Faction = FactionMgr.GetFactionByID(64);
-                CO.Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
                 CO.RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
 
                 CO.X = 34080;
                 CO.Y = 32919;
                 CO.Z = 14518;
-                CO.MaxDistance = 2000;
                 CO.TetherRange = 2000;
                 CO.MaxSpeedBase = 250;
                 CO.Heading = 4079;
@@ -181,8 +179,7 @@ namespace DOL.AI.Brain
 {
     public class LordSanguisBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LordSanguisBrain()
             : base()
@@ -191,6 +188,15 @@ namespace DOL.AI.Brain
             AggroRange = 500;
         }
         private bool RemoveAdds = false;
+        private readonly List<GameNPC> _mages = new List<GameNPC>();
+        private int AliveMageCount
+        {
+            get
+            {
+                _mages.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+                return _mages.Count;
+            }
+        }
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -198,7 +204,7 @@ namespace DOL.AI.Brain
                 //set state to RETURN TO SPAWN
                 FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
                 Body.Health = Body.MaxHealth;
-                BloodMage.MageCount = 0;
+                _mages.Clear();
                 if (!RemoveAdds)
                 {
                     foreach (GameNPC mages in Body.GetNPCsInRadius(5000))
@@ -217,7 +223,7 @@ namespace DOL.AI.Brain
                 RemoveAdds = false;
                 if (Util.Chance(10))
                 {
-                    if (BloodMage.MageCount < 2)
+                    if (AliveMageCount < 2)
                         SpawnMages();
                 }
             }
@@ -232,6 +238,7 @@ namespace DOL.AI.Brain
             Add.CurrentRegion = Body.CurrentRegion;
             Add.Heading = Body.Heading;
             Add.AddToWorld();
+            _mages.Add(Add);
         }
     }
 }
@@ -245,15 +252,8 @@ namespace DOL.GS
         {
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -288,14 +288,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60163267);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
             ParryChance = npcTemplate.ParryChance;
-            Empathy = npcTemplate.Empathy;
 
             GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 442, 67);
@@ -309,19 +302,15 @@ namespace DOL.GS
             Name = "Lich Lord Sanguis";
             ParryChance = 35;
             RespawnInterval = -1;
-            LichLordSanguisBrain.set_flag = false;
 
-            MaxDistance = 2000;
             TetherRange = 2000;
             Size = 100;
             Level = 81;
             MaxSpeedBase = 250;
 
             Faction = FactionMgr.GetFactionByID(64);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
             BodyType = 8;
             Realm = eRealm.None;
-            LichLordSanguisBrain.set_flag = false;
             LichLordSanguisBrain adds = new LichLordSanguisBrain();
             SetOwnBrain(adds);
             base.AddToWorld();
@@ -339,8 +328,7 @@ namespace DOL.AI.Brain
 {
     public class LichLordSanguisBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LichLordSanguisBrain()
             : base()
@@ -350,12 +338,12 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public static bool set_flag = false;
+        public bool set_flag = false;
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -385,20 +373,16 @@ namespace DOL.GS
 {
     public class BloodMage : GameNPC //thrust resist
     {
+        private const int DESPAWN_DELAY = 180000; // Death-spawned adds despawn if they're left alone.
+        private const int DESPAWN_RETRY_INTERVAL = 30000;
+
         public BloodMage() : base()
         {
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
 
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
 
         public override double GetArmorAF(eArmorSlot slot)
         {
@@ -416,13 +400,6 @@ namespace DOL.GS
             get { return 8000; }
         }
 
-        public override void Die(GameObject killer)
-        {
-            --MageCount;
-            base.Die(killer);
-        }
-
-        public static int MageCount = 0;
         public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
         public override short Strength { get => base.Strength; set => base.Strength = 150; }   
         public override bool AddToWorld()
@@ -445,7 +422,6 @@ namespace DOL.GS
             Name = "blood mage";
             RespawnInterval = -1;
 
-            MaxDistance = 2500;
             TetherRange = 3000;
             RoamingRange = 120;
             Size = 50;
@@ -453,15 +429,27 @@ namespace DOL.GS
             MaxSpeedBase = 200;
 
             Faction = FactionMgr.GetFactionByID(64);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
             BodyType = 6;
             Realm = eRealm.None;
-            ++MageCount;
 
             BloodMageBrain adds = new BloodMageBrain();
             SetOwnBrain(adds);
+            new ECSGameTimer(this, Despawn, DESPAWN_DELAY);
             base.AddToWorld();
             return true;
+        }
+
+        private int Despawn(ECSGameTimer timer)
+        {
+            if (!IsAlive)
+                return 0;
+
+            // Don't despawn mid fight.
+            if (InCombat || Brain is StandardMobBrain { HasAggro: true })
+                return DESPAWN_RETRY_INTERVAL;
+
+            RemoveFromWorld();
+            return 0;
         }
     }
 }
@@ -470,8 +458,7 @@ namespace DOL.AI.Brain
 {
     public class BloodMageBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public BloodMageBrain()
             : base()

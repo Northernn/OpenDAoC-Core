@@ -1,39 +1,17 @@
-﻿/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using DOL.Database;
 using DOL.GS.Housing;
-using DOL.GS.Spells;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
 	[PacketLib(1125, GameClient.eClientVersion.Version1125)]
 	public class PacketLib1125 : PacketLib1124
 	{
-
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
 		/// Constructs a new PacketLib for Client Version 1.125
@@ -50,14 +28,14 @@ namespace DOL.GS.PacketHandler
 		public override void SendVersionAndCryptKey()
 		{
 			//Construct the new packet
-			using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.CryptKey)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CryptKey)))
 			{
 				pak.WritePascalStringIntLE((((int)m_gameClient.Version) / 1000) + "." + (((int)m_gameClient.Version) - 1000) + m_gameClient.MinorRev);
 				//// Same as the trailing two bytes sent in first client to server packet
 				pak.WriteByte(m_gameClient.MajorBuild); // last seen : 0x2A 0x07
 				pak.WriteByte(m_gameClient.MinorBuild);
 				SendTCP(pak);
-				m_gameClient.PacketProcessor.ProcessTcpQueue();
+				m_gameClient.PacketProcessor.SendPendingPackets();
 			}
 		}
 
@@ -66,7 +44,7 @@ namespace DOL.GS.PacketHandler
 		/// </summary>
 		public override void SendLoginGranted(byte color)
 		{
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.LoginGranted)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.LoginGranted)))
 			{
 				pak.WritePascalString(m_gameClient.Account.Name);
 				pak.WritePascalString(GameServer.Instance.Configuration.ServerNameShort); //server name
@@ -82,7 +60,7 @@ namespace DOL.GS.PacketHandler
 		/// </summary>
 		public override void SendRealm(eRealm realm)
 		{
-			using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.Realm)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.Realm)))
 			{
 				pak.WriteByte((byte)realm);
 				pak.Fill(0, 12);
@@ -102,7 +80,7 @@ namespace DOL.GS.PacketHandler
 
 			int firstSlot = (byte)realm * 100;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.CharacterOverview)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CharacterOverview)))
 			{
 				//pak.Fillstring(GameClient.Account.Name, 24);
 				pak.Fill(0, 8);
@@ -136,12 +114,13 @@ namespace DOL.GS.PacketHandler
 						{
 							try
 							{
-								if (!itemsByOwnerID.ContainsKey(item.OwnerID))
+								if (!itemsByOwnerID.TryGetValue(item.OwnerID, out Dictionary<eInventorySlot, DbInventoryItem> inventory))
 								{
-									itemsByOwnerID.Add(item.OwnerID, new Dictionary<eInventorySlot, DbInventoryItem>());
+									inventory = new Dictionary<eInventorySlot, DbInventoryItem>();
+									itemsByOwnerID.Add(item.OwnerID, inventory);
 								}
 
-								itemsByOwnerID[item.OwnerID].Add((eInventorySlot)item.SlotPosition, item);
+								inventory.Add((eInventorySlot) item.SlotPosition, item);
 							}
 							catch (Exception ex)
 							{
@@ -208,11 +187,11 @@ namespace DOL.GS.PacketHandler
 							}
 							if (locationDescription.Length > 23) // location name over 23 chars has to be truncated eg. "The Great Pyramid of Stygia"
 							{
-								locationDescription = (locationDescription.Substring(0, 20)) + "...";
+								locationDescription = string.Concat(locationDescription.AsSpan(0, 20), "...");
 							}
 							pak.WritePascalStringIntLE(locationDescription);
 
-							string classname = "";
+							string classname = string.Empty;
 							if (c.Class != 0)
 							{
 								classname = ((eCharacterClass)c.Class).ToString();
@@ -391,7 +370,7 @@ namespace DOL.GS.PacketHandler
 		/// </summary>
 		public override void SendUDPInitReply()
 		{
-			using (var pak = new GSUDPPacketOut(GetPacketCode(eServerPackets.UDPInitReply)))
+			using (var pak = PooledObjectFactory.GetForTick<GSUDPPacketOut>().Init(GetPacketCode(eServerPackets.UDPInitReply)))
 			{
 
 				if (!m_gameClient.Socket.Connected) // not using RC4, wont accept UDP packets anyway.
@@ -410,7 +389,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VariousUpdate)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VariousUpdate)))
 			{
 				pak.WriteByte(0x06); // subcode - player group window
 									 // a 06 00 packet is sent when logging in.
@@ -436,7 +415,7 @@ namespace DOL.GS.PacketHandler
 			}
 		}
 
-		protected override void WriteGroupMemberUpdate(GSTCPPacketOut pak, bool updateIcons, bool updateMap, GameLiving living)
+		protected override void WriteGroupMemberUpdate(GSTCPPacketOut pak, GameLiving living)
 		{
 			pak.WriteByte((byte)(0x20 | living.GroupIndex)); // From 1 to 8 // 0x20 is player status code
 			if (living.CurrentRegion != m_gameClient.Player.CurrentRegion)
@@ -445,83 +424,70 @@ namespace DOL.GS.PacketHandler
 				pak.WriteByte(0x00); // mana
 				pak.WriteByte(0x00); // endu
 				pak.WriteByte(0x20); // player state (0x20 = another region)
-				if (updateIcons)
-				{
-					pak.WriteByte((byte)(0x80 | living.GroupIndex));
-					pak.WriteByte(0);
-				}
 				return;
 			}
 
 			var player = living as GamePlayer;
 
-			pak.WriteByte(player?.CharacterClass?.HealthPercentGroupWindow ?? living.HealthPercent);
+			pak.WriteByte(player?.HealthPercentGroupWindow ?? living.HealthPercent);
 			pak.WriteByte(living.ManaPercent);
 			pak.WriteByte(living.EndurancePercent); // new in 1.69
 
 			byte playerStatus = 0;
-			if (!living.IsAlive)
+			if (living.Health <=0)
 				playerStatus |= 0x01;
 			if (living.IsMezzed)
 				playerStatus |= 0x02;
 			if (living.IsDiseased)
 				playerStatus |= 0x04;
-			if (SpellHelper.FindEffectOnTarget(living, "DamageOverTime") != null)
+			if (living.IsPoisoned)
 				playerStatus |= 0x08;
-			if (player?.Client?.ClientState == GameClient.eClientState.Linkdead)
+			if (player?.Client.ClientState == GameClient.eClientState.Linkdead)
 				playerStatus |= 0x10;
-			if (living.DebuffCategory[(int)eProperty.SpellRange] != 0 || living.DebuffCategory[(int)eProperty.ArcheryRange] != 0)
+			// These debuffs currently don't trigger a call to WriteGroupMemberUpdate.
+			// See EffectHelper.GetPlayerUpdateFromEffect.
+			if (living.DebuffCategory[eProperty.SpellRange] != 0 || living.DebuffCategory[eProperty.ArcheryRange] != 0)
 				playerStatus |= 0x40;
 			pak.WriteByte(playerStatus);
 			// 0x00 = Normal , 0x01 = Dead , 0x02 = Mezzed , 0x04 = Diseased ,
 			// 0x08 = Poisoned , 0x10 = Link Dead , 0x20 = In Another Region, 0x40 - NS
+		}
 
-			if (updateMap)
-				WriteGroupMemberMapUpdate(pak, living);
+		protected override void WriteGroupMemberIconsUpdate(GSTCPPacketOut pak, GameLiving living)
+		{
+			pak.WriteByte((byte)(0x80 | living.GroupIndex));
 
-			if (updateIcons)
+			if (living.CurrentRegion != m_gameClient.Player.CurrentRegion)
 			{
-				pak.WriteByte((byte)(0x80 | living.GroupIndex));
-				//lock (living.EffectList)
-				//{
-				//	pak.WriteByte((byte)living.EffectList.OfType<GameSpellEffect>().Count());
-				//	foreach (var effect in living.EffectList)
-				//	{
-				//		if (effect is GameSpellEffect)
-				//		{
-				//			pak.WriteByte(0);
-				//			pak.WriteShort(effect.Icon);
-				//		}
-				//	}
-				//}
-				lock (living.effectListComponent.EffectsLock)
-				{
-					byte i = 0;
-					var effects = living.effectListComponent.GetAllEffects();
-					if (living is GamePlayer necro && necro.CharacterClass.ID == (int)eCharacterClass.Necromancer && necro.IsShade)
-						effects.AddRange(necro.ControlledBrain.Body.effectListComponent.GetAllEffects().Where(e => e.TriggersImmunity));
-					foreach (var effect in effects)//.Effects.Values)
-												   //foreach (ECSGameEffect effect in effects)
-						if (effect is ECSGameEffect && !effect.IsDisabled)
-							i++;
-					pak.WriteByte(i);
-					foreach (var effect in effects)//.Effects.Values)
-												   //foreach (ECSGameEffect effect in effects)
-						if (effect is ECSGameEffect && !effect.IsDisabled)
-						{
-							pak.WriteByte(0);
-							pak.WriteShort(effect.Icon);
-						}
-				}
+				pak.WriteByte(0);
+				return;
 			}
+
+			var player = living as GamePlayer;
+			byte i = 0;
+			var effects = living.effectListComponent.GetSortedEffects();
+
+			if (player != null && player.ControlledBrain is NecromancerPet necromancerPet)
+				effects.AddRange(necromancerPet.effectListComponent.GetSortedEffects(static e => e.TriggersImmunity));
+
+			foreach (var effect in effects)
+				if (effect is ECSGameEffect && !effect.IsDisabled)
+					i++;
+			pak.WriteByte(i);
+			foreach (var effect in effects)
+				if (effect is ECSGameEffect && !effect.IsDisabled)
+				{
+					pak.WriteByte(0);
+					pak.WriteShort(effect.Icon);
+				}
 		}
 
 		/// <summary>
 		/// 1125d+ Market Explorer
 		/// </summary>
-		public override void SendMarketExplorerWindow(IList<DbInventoryItem> items, byte page, byte maxpage)
+		public override void SendMarketExplorerWindow(List<DbInventoryItem> items, byte page, byte maxpage)
 		{
-			using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.MarketExplorerWindow)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MarketExplorerWindow)))
 			{
 				pak.WriteByte((byte)items.Count);
 				pak.WriteByte(page);
@@ -595,7 +561,7 @@ namespace DOL.GS.PacketHandler
 
 					if (ServerProperties.Properties.CONSIGNMENT_USE_BP)
 					{
-						string bpPrice = "";
+						string bpPrice = string.Empty;
 						if (item.SellPrice > 0)
 						{
 							bpPrice = "[" + item.SellPrice.ToString() + " BP";
@@ -650,7 +616,7 @@ namespace DOL.GS.PacketHandler
 						continue;
 					}
 
-					using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.MerchantWindow)))
+					using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MerchantWindow)))
 					{
 						pak.WriteByte((byte)itemsInPage.Count); //Item count on this page
 						pak.WriteByte((byte)windowType);
@@ -753,7 +719,7 @@ namespace DOL.GS.PacketHandler
 			}
 			else
 			{
-				using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.MerchantWindow)))
+				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MerchantWindow)))
 				{
 					pak.WriteByte(0); //Item count on this page
 					pak.WriteByte((byte)windowType); //Unknown 0x00
@@ -768,7 +734,7 @@ namespace DOL.GS.PacketHandler
         /// </summary>
         public override void SendFurniture(House house)
         {
-            using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.HousingItem)))
+            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HousingItem)))
             {
                 pak.WriteShortLowEndian((ushort)house.HouseNumber);
                 pak.WriteByte((byte)house.IndoorItems.Count);
@@ -789,7 +755,7 @@ namespace DOL.GS.PacketHandler
         /// </summary>
         public override void SendFurniture(House house, int i)
         {
-            using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.HousingItem)))
+            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HousingItem)))
             {
                 pak.WriteShortLowEndian((ushort)house.HouseNumber);
                 pak.WriteByte(0x01); //cnt

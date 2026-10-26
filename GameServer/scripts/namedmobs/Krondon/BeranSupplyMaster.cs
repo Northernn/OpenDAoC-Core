@@ -27,11 +27,7 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -56,17 +52,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60158369);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			BeranSupplyMasterBrain sbrain = new BeranSupplyMasterBrain();
 			SetOwnBrain(sbrain);
@@ -75,7 +63,7 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(2500))
 			{
@@ -85,7 +73,7 @@ namespace DOL.GS
 						npc.Die(npc);
 				}
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
     }
 }
@@ -93,15 +81,15 @@ namespace DOL.AI.Brain
 {
     public class BeranSupplyMasterBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public BeranSupplyMasterBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool Ignite_Barrel = false;
-		public static bool BringAdds = false;
+		public bool Ignite_Barrel = false;
+		public bool BringAdds = false;
 		private bool RemoveAdds = false;
 		public override void Think()
 		{
@@ -160,7 +148,6 @@ namespace DOL.AI.Brain
 					add.RespawnInterval = -1;
 					add.MaxSpeedBase = 225;
 					add.Faction = FactionMgr.GetFactionByID(8);
-					add.Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 					StandardMobBrain brain = new StandardMobBrain();
 					add.SetOwnBrain(brain);
 					brain.AggroRange = 1000;
@@ -174,7 +161,7 @@ namespace DOL.AI.Brain
         }
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
 			}
@@ -255,7 +242,6 @@ namespace DOL.GS
 			Flags ^= eFlags.STATUE;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			BarrelExplosiveBrain sbrain = new BarrelExplosiveBrain();
 			SetOwnBrain(sbrain);
@@ -323,7 +309,6 @@ namespace DOL.GS
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Heat;
 					m_Barrel_aoe = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Barrel_aoe);
 				}
 				return m_Barrel_aoe;
 			}
@@ -334,7 +319,7 @@ namespace DOL.AI.Brain
 {
     public class BarrelExplosiveBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public BarrelExplosiveBrain() : base()
 		{
 			AggroLevel = 100;

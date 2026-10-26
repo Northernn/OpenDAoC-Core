@@ -1,411 +1,252 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using DOL.Database;
-using DOL.Events;
+using DOL.GS.Keeps;
 using DOL.GS.PacketHandler;
+using DOL.GS.RealmAbilities;
 using DOL.GS.Spells;
 using DOL.GS.Styles;
-using static DOL.GS.GameLiving;
 using static DOL.GS.GameObject;
 
 namespace DOL.GS
 {
     public class WeaponAction
     {
-        protected readonly GameLiving m_owner;
-        protected readonly GameObject m_target;
-        protected readonly DbInventoryItem m_attackWeapon;
-        protected readonly DbInventoryItem m_leftWeapon;
-        protected readonly double m_effectiveness;
-        protected readonly int m_interruptDuration;
-        protected readonly Style m_combatStyle;
-        protected readonly eRangedAttackType m_RangedAttackType;
+        private GameLiving _owner;
+        private GameLiving _target;
+        private DbInventoryItem _attackWeapon;
+        private DbInventoryItem _leftWeapon;
+        private double _effectiveness;
+        private int _interval;
+        private Style _combatStyle;
+        private int _extraSwings;
 
-        // The ranged attack type at the time the shot was released.
-        public eRangedAttackType RangedAttackType => m_RangedAttackType;
+        public long AttackRoundEndTime { get; private set; }
+        public bool IsAttackRoundFinished => GameServiceUtils.ShouldTick(AttackRoundEndTime);
 
-        public bool AttackFinished { get; set; }
         public eActiveWeaponSlot ActiveWeaponSlot { get; }
+        public eRangedAttackType RangedAttackType { get; }
+        public DbInventoryItem Ammo { get; }
+        public byte StyleChainStage { get; }
 
-        public WeaponAction(GameLiving owner, GameObject target, DbInventoryItem attackWeapon, DbInventoryItem leftWeapon, double effectiveness, int interruptDuration, Style combatStyle)
+        public bool HasConsumedBlockRound { get; set; } // Used to prevent multihit attacks from consuming multiple block rounds.
+        public bool HasAmmoReachedTarget { get; private set; } // Used to not cancel the release animation. A bit clunky, may not work perfectly.
+        public DualWieldMechanic DualWieldMechanic { get; private set; }
+        public byte SwingsExecuted { get; private set; }
+
+        public WeaponAction(GameLiving owner, GameLiving target, DbInventoryItem attackWeapon, DbInventoryItem leftWeapon, double effectiveness, int interval, Style combatStyle, byte styleChainStage)
         {
-            m_owner = owner;
-            m_target = target;
-            m_attackWeapon = attackWeapon;
-            m_leftWeapon = leftWeapon;
-            m_effectiveness = effectiveness;
-            m_interruptDuration = interruptDuration;
-            m_combatStyle = combatStyle;
+            _owner = owner;
+            _target = target;
+            _attackWeapon = attackWeapon;
+            _leftWeapon = leftWeapon;
+            _effectiveness = effectiveness;
+            _interval = interval;
+            _combatStyle = combatStyle;
             ActiveWeaponSlot = owner.ActiveWeaponSlot;
+            StyleChainStage = styleChainStage;
         }
 
-        public WeaponAction(GameLiving owner, GameObject target, DbInventoryItem attackWeapon, double effectiveness, int interruptDuration, eRangedAttackType rangedAttackType)
+        public WeaponAction(GameLiving owner, GameLiving target, DbInventoryItem attackWeapon, double effectiveness, int interval, eRangedAttackType rangedAttackType, DbInventoryItem ammo)
         {
-            m_owner = owner;
-            m_target = target;
-            m_attackWeapon = attackWeapon;
-            m_effectiveness = effectiveness;
-            m_interruptDuration = interruptDuration;
-            m_RangedAttackType = rangedAttackType;
+            _owner = owner;
+            _target = target;
+            _attackWeapon = attackWeapon;
+            _effectiveness = effectiveness;
+            _interval = interval;
             ActiveWeaponSlot = owner.ActiveWeaponSlot;
-        }
-
-        public void Execute()
-        {
-            AttackFinished = true;
-
-            // Crash fix since its apparently possible to get here with a null target.
-            if (m_target == null)
-                return;
-
-            Style style = m_combatStyle;
-            int leftHandSwingCount = 0;
-            AttackData mainHandAD = null;
-            AttackData leftHandAD = null;
-            DbInventoryItem mainWeapon = m_attackWeapon;
-            DbInventoryItem leftWeapon = m_leftWeapon;
-            double leftHandEffectiveness = m_effectiveness;
-            double mainHandEffectiveness = m_effectiveness;
-
-            // GameNPC can dual swing even with no weapon.
-            if (m_owner is GameNPC && m_owner.attackComponent.CanUseLefthandedWeapon)
-                leftHandSwingCount = m_owner.attackComponent.CalculateLeftHandSwingCount();
-            else if (m_owner.attackComponent.CanUseLefthandedWeapon &&
-                     leftWeapon != null &&
-                     leftWeapon.Object_Type != (int)eObjectType.Shield &&
-                     mainWeapon != null &&
-                     mainWeapon.Hand != 1)
-                leftHandSwingCount = m_owner.attackComponent.CalculateLeftHandSwingCount();
-
-            // CMH
-            // 1.89
-            //- Pets will no longer continue to attack a character after the character has stealthed.
-            // 1.88
-            //- Monsters, pets and Non-Player Characters (NPCs) will now halt their pursuit when the character being chased stealths.
-            /*
-            if (owner is GameNPC
-                && m_target is GamePlayer
-                && ((GamePlayer)m_target).IsStealthed 
-                && !(owner is GameSummonedPet))
-            {
-                // note due to the 2 lines above all npcs stop attacking
-                GameNPC npc = (GameNPC)owner;
-                npc.attackComponent.NPCStopAttack();
-                npc.TargetObject = null;
-                //Stop(); // stop the full tick timer? looks like other code is doing this
-
-                // target death caused this below, so I'm replicating it
-                if (npc.ActiveWeaponSlot != eActiveWeaponSlot.Distance &&
-                    npc.Inventory != null &&
-                    npc.Inventory.GetItem(eInventorySlot.DistanceWeapon) != null)
-                    npc.SwitchWeapon(eActiveWeaponSlot.Distance);
-                return;
-            }*/
-
-            bool usingOH = false;
-            m_owner.attackComponent.UsedHandOnLastDualWieldAttack = 0;
-
-            if (leftHandSwingCount > 0)
-            {
-                if (m_owner is GameNPC ||
-                    mainWeapon.Object_Type == (int)eObjectType.HandToHand || 
-                    leftWeapon?.Object_Type == (int)eObjectType.HandToHand || 
-                    mainWeapon.Object_Type == (int)eObjectType.TwoHandedWeapon || 
-                    mainWeapon.Object_Type == (int)eObjectType.Thrown ||
-                    mainWeapon.SlotPosition == Slot.RANGED)
-                    usingOH = false;
-                else
-                {
-                    usingOH = true;
-                    m_owner.attackComponent.UsedHandOnLastDualWieldAttack = 2;
-                }
-
-                // Both hands are used for attack.
-                mainHandAD = m_owner.attackComponent.MakeAttack(this, m_target, mainWeapon, style, mainHandEffectiveness, m_interruptDuration, usingOH);
-
-                if (style == null)
-                    mainHandAD.AnimationId = -2; // Virtual code for both weapons swing animation.
-            }
-            else if (mainWeapon != null)
-            {
-                if (m_owner is GameNPC ||
-                    mainWeapon.Item_Type == Slot.TWOHAND ||
-                    mainWeapon.SlotPosition == Slot.RANGED)
-                    usingOH = false;
-                else if (leftWeapon != null && leftWeapon.Object_Type != (int)eObjectType.Shield)
-                    usingOH = true;
-
-                // One of two hands is used for attack if no style, treated as a main hand attack.
-                if (usingOH && style == null && Util.Chance(50))
-                {
-                    m_owner.attackComponent.UsedHandOnLastDualWieldAttack = 1;
-                    mainWeapon = leftWeapon;
-                    mainHandAD = m_owner.attackComponent.MakeAttack(this, m_target, mainWeapon, style, mainHandEffectiveness, m_interruptDuration, false);
-                    mainHandAD.AnimationId = -1; // Virtual code for left weapons swing animation.
-                }
-                else
-                    mainHandAD = m_owner.attackComponent.MakeAttack(this, m_target, mainWeapon, style, mainHandEffectiveness, m_interruptDuration, false);
-            }
-            else
-                mainHandAD = m_owner.attackComponent.MakeAttack(this, m_target, mainWeapon, style, mainHandEffectiveness, m_interruptDuration, false);
-
-            m_owner.TempProperties.SetProperty(LAST_ATTACK_DATA, mainHandAD);
-
-            if (mainHandAD.Target == null ||
-                mainHandAD.AttackResult == eAttackResult.OutOfRange ||
-                mainHandAD.AttackResult == eAttackResult.TargetNotVisible ||
-                mainHandAD.AttackResult == eAttackResult.NotAllowed_ServerRules ||
-                mainHandAD.AttackResult == eAttackResult.TargetDead)
-            {
-                return;
-            }
-
-            // Notify the target of our attack (sends damage messages, should be before damage)
-            mainHandAD.Target.OnAttackedByEnemy(mainHandAD);
-
-            // Check if Reflex Attack RA should apply. This is checked once here and cached since it is used multiple times below (every swing triggers Reflex Attack).
-            bool targetHasReflexAttackRA = false;
-            GamePlayer targetPlayer = mainHandAD.Target as GamePlayer;
-
-            if (targetPlayer != null && targetPlayer.effectListComponent.ContainsEffectForEffectType(eEffect.ReflexAttack))
-                targetHasReflexAttackRA = true;
-
-            // Reflex Attack - Mainhand.
-            if (targetHasReflexAttackRA)
-                HandleReflexAttack(m_owner, mainHandAD.Target, mainHandAD.AttackResult, m_interruptDuration);
-
-            // Deal damage and start effect.
-            if (mainHandAD.AttackResult is eAttackResult.HitUnstyled or eAttackResult.HitStyle)
-            {
-                m_owner.DealDamage(mainHandAD);
-
-                if (mainHandAD.IsMeleeAttack)
-                {
-                    m_owner.CheckWeaponMagicalEffect(mainHandAD, mainWeapon);
-                    HandleDamageAdd(m_owner, mainHandAD);
-
-                    //[Atlas - Takii] Reflex Attack NF Implementation commented out.
-                    //if (mainHandAD.Target is GameLiving)
-                    //{
-                    //    GameLiving living = mainHandAD.Target as GameLiving;
-
-                    //    RealmAbilities.L3RAPropertyEnhancer ra = living.GetAbility<RealmAbilities.ReflexAttackAbility>();
-                    //    if (ra != null && Util.Chance(ra.Amount))
-                    //    {
-                    //        AttackData ReflexAttackAD = living.attackComponent.LivingMakeAttack(owner, living.ActiveWeapon, null, 1, m_interruptDuration, false, true);
-                    //        living.DealDamage(ReflexAttackAD);
-                    //        living.SendAttackingCombatMessages(ReflexAttackAD);
-                    //    }
-                    //}
-                }
-            }
-
-            //CMH
-            // 1.89:
-            // - Characters who are attacked by stealthed archers will now target the attacking archer if the attacked player does not already have a target.
-            if (mainHandAD.Attacker.IsStealthed
-                && mainHandAD.AttackType == AttackData.eAttackType.Ranged
-                && (mainHandAD.AttackResult == eAttackResult.HitUnstyled || mainHandAD.AttackResult == eAttackResult.HitStyle))
-            {
-                if (mainHandAD.Target.TargetObject == null)
-                    targetPlayer?.Out.SendChangeTarget(mainHandAD.Attacker);
-            }
-
-            if (mainHandAD == null || mainHandAD.Target == null)
-                return;
-
-            mainHandAD.Target.HandleDamageShields(mainHandAD);
-
-            // Remove the left-hand AttackData from the previous attack.
-            m_owner.TempProperties.RemoveProperty(LAST_ATTACK_DATA_LH);
-
-            // Now left hand damage.
-            if (leftHandSwingCount > 0 && mainWeapon.SlotPosition != Slot.RANGED)
-            {
-                switch (mainHandAD.AttackResult)
-                {
-                    case eAttackResult.HitStyle:
-                    case eAttackResult.HitUnstyled:
-                    case eAttackResult.Missed:
-                    case eAttackResult.Blocked:
-                    case eAttackResult.Evaded:
-                    case eAttackResult.Fumbled: // Takii - Fumble should not prevent Offhand attack.
-                    case eAttackResult.Parried:
-                        for (int i = 0; i < leftHandSwingCount; i++)
-                        {
-                            if (m_target is GameLiving living && (living.IsAlive == false || living.ObjectState != eObjectState.Active))
-                                break;
-
-                            // Savage swings - main, left, main, left.
-                            if (i % 2 == 0)
-                                leftHandAD = m_owner.attackComponent.MakeAttack(this, m_target, leftWeapon, null, leftHandEffectiveness, m_interruptDuration, usingOH);
-                            else
-                                leftHandAD = m_owner.attackComponent.MakeAttack(this, m_target, mainWeapon, null, leftHandEffectiveness, m_interruptDuration, usingOH);
-
-                            // Notify the target of our attack (sends damage messages, should be before damage).
-                            leftHandAD.Target?.OnAttackedByEnemy(leftHandAD);
-
-                            // Deal damage and start the effect if any.
-                            if (leftHandAD.AttackResult is eAttackResult.HitUnstyled or eAttackResult.HitStyle)
-                            {
-                                m_owner.DealDamage(leftHandAD);
-                                if (leftHandAD.IsMeleeAttack)
-                                {
-                                    m_owner.CheckWeaponMagicalEffect(leftHandAD, leftWeapon);
-                                    HandleDamageAdd(m_owner, leftHandAD);
-                                }
-                            }
-
-                            m_owner.TempProperties.SetProperty(LAST_ATTACK_DATA_LH, leftHandAD);
-                            leftHandAD.Target.HandleDamageShields(leftHandAD);
-
-                            // Reflex Attack - Offhand.
-                            if (targetHasReflexAttackRA)
-                                HandleReflexAttack(m_owner, leftHandAD.Target, leftHandAD.AttackResult, m_interruptDuration);
-                        }
-
-                        break;
-                }
-            }
-
-            if (mainHandAD.AttackType == AttackData.eAttackType.Ranged)
-            {
-                m_owner.CheckWeaponMagicalEffect(mainHandAD, mainWeapon);
-                HandleDamageAdd(m_owner, mainHandAD);
-                m_owner.RangedAttackFinished();
-            }
-
-            switch (mainHandAD.AttackResult)
-            {
-                case eAttackResult.NoTarget:
-                case eAttackResult.TargetDead:
-                    {
-                        m_owner.OnTargetDeadOrNoTarget();
-                        return;
-                    }
-                case eAttackResult.NotAllowed_ServerRules:
-                case eAttackResult.NoValidTarget:
-                    {
-                        m_owner.attackComponent.StopAttack();
-                        return;
-                    }
-                case eAttackResult.OutOfRange:
-                    break;
-            }
-
-            // Unstealth before attack animation.
-            if (m_owner is GamePlayer playerOwner)
-                playerOwner.Stealth(false);
-
-            // Show the animation.
-            if (mainHandAD.AttackResult != eAttackResult.HitUnstyled && mainHandAD.AttackResult != eAttackResult.HitStyle && leftHandAD != null)
-                ShowAttackAnimation(leftHandAD, leftWeapon);
-            else
-                ShowAttackAnimation(mainHandAD, mainWeapon);
-
-            // Start style effect after any damage.
-            if (mainHandAD.StyleEffects.Count > 0 && mainHandAD.AttackResult == eAttackResult.HitStyle)
-            {
-                foreach (ISpellHandler proc in mainHandAD.StyleEffects)
-                    proc.StartSpell(mainHandAD.Target);
-            }
-
-            if (leftHandAD != null && leftHandAD.StyleEffects.Count > 0 && leftHandAD.AttackResult == eAttackResult.HitStyle)
-            {
-                foreach (ISpellHandler proc in leftHandAD.StyleEffects)
-                    proc.StartSpell(leftHandAD.Target);
-            }
-
-            // Mobs' heading isn't updated after they start attacking, so we update it after they swing.
-            if (m_owner is GameNPC npcOwner)
-                npcOwner.TurnTo(mainHandAD.Target);
-
-            return;
+            RangedAttackType = rangedAttackType;
+            Ammo = ammo;
         }
 
         public int Execute(ECSGameTimer timer)
         {
+            HasAmmoReachedTarget = true;
             Execute();
             return 0;
         }
 
-        private static void HandleDamageAdd(GameLiving owner, AttackData ad)
+        public void Execute()
         {
-            List<ECSGameSpellEffect> dmgAddEffects = owner.effectListComponent.GetSpellEffects(eEffect.DamageAdd);
+            // 1.89
+            //- Pets will no longer continue to attack a character after the character has stealthed.
+            // 1.88
+            //- Monsters, pets and Non-Player Characters (NPCs) will now halt their pursuit when the character being chased stealths.
 
-            /// [Atlas - Takii] This could probably be optimized a bit by doing the split below between "affected/unaffected by stacking"
-            /// when the effect is applied in the EffectListComponent instead of every time we swing our weapon?
-            if (dmgAddEffects != null)
+            if (!MakeMainHandAttack(out AttackData mainHandAttackData))
+                return;
+
+            AttackRoundEndTime = GameLoop.GameLoopTime + _interval;
+            AttackData extraAttackData = null;
+            DbInventoryItem lastExtraWeapon = null;
+
+            for (int i = 0; i < _extraSwings; i++)
             {
-                List<ECSGameSpellEffect> dmgAddsUnaffectedByStacking = new();
-
-                // 1 - Apply the DmgAdds that are unaffected by stacking (usually RA-based DmgAdds, EffectGroup 99999) first regardless of their damage.
-                foreach (ECSGameSpellEffect effect in dmgAddEffects)
+                if (i % 2 == 0)
                 {
-                    if (effect.SpellHandler.Spell.EffectGroup == 99999)
-                    {
-                        dmgAddsUnaffectedByStacking.Add(effect);
-                        ((DamageAddSpellHandler)effect.SpellHandler).EventHandler(null, owner, new AttackFinishedEventArgs(ad), 1);
-                    }
+                    lastExtraWeapon = _leftWeapon;
+                    extraAttackData = InitiateAttack(_leftWeapon, null);
+                }
+                else
+                {
+                    lastExtraWeapon = _attackWeapon;
+                    extraAttackData = InitiateAttack(_attackWeapon, null);
                 }
 
-                // 2 - Apply regular damage adds. We only start reducing to 50% effectiveness if there is more than one regular damage add being applied.
-                // "Unaffected by stacking" dmg adds also dont reduce subsequence damage adds; they are effectively outside of the stacking mechanism.
-                int numRegularDmgAddsApplied = 0;
-
-                foreach (ECSGameSpellEffect effect in dmgAddEffects.Except(dmgAddsUnaffectedByStacking).OrderByDescending(e => e.SpellHandler.Spell.Damage))
-                {
-                    double effectiveness = 1 + effect.SpellHandler.Caster.GetModified(eProperty.BuffEffectiveness) * 0.01;
-                    if (effect.IsBuffActive)
-                    {
-                        ((DamageAddSpellHandler)effect.SpellHandler).EventHandler(null, owner, new AttackFinishedEventArgs(ad), numRegularDmgAddsApplied > 0 ? effectiveness * 0.5 : effectiveness);
-                        numRegularDmgAddsApplied++;
-                    }
-                }
+                FinalizeAttack(extraAttackData);
             }
-        }
 
-        private static void HandleReflexAttack(GameLiving attacker, GameLiving target, eAttackResult attackResult, int interruptDuration)
-        {
-            // Create an attack where the target hits the attacker back.
-            // Triggers if we actually took a swing at the target, regardless of whether or not we hit.
-            switch (attackResult)
+            switch (mainHandAttackData.AttackResult)
             {
                 case eAttackResult.HitStyle:
-                case eAttackResult.HitUnstyled:
-                case eAttackResult.Missed:
-                case eAttackResult.Blocked:
-                case eAttackResult.Evaded:
-                case eAttackResult.Parried:
-                    AttackData ReflexAttackAD = target.attackComponent.LivingMakeAttack(null, attacker, target.ActiveWeapon, null, 1, interruptDuration, false, true);
-                    target.DealDamage(ReflexAttackAD);
-
-                    // If we get hit by Reflex Attack (it can miss), send a "you were hit" message to the attacker manually
-                    // since it will not be done automatically as this attack is not processed by regular attacking code.
-                    if (ReflexAttackAD.AttackResult == eAttackResult.HitUnstyled)
+                {
+                    if (mainHandAttackData.StyleEffects != null)
                     {
-                        GamePlayer playerAttacker = attacker as GamePlayer;
-                        playerAttacker?.Out.SendMessage(target.Name + " counter-attacks you for " + ReflexAttackAD.Damage + " damage.", eChatType.CT_Damaged, eChatLoc.CL_SystemWindow);
+                        foreach (ISpellHandler proc in mainHandAttackData.StyleEffects)
+                            proc.StartSpell(mainHandAttackData.Target);
                     }
 
                     break;
-                case eAttackResult.NotAllowed_ServerRules:
+                }
                 case eAttackResult.NoTarget:
                 case eAttackResult.TargetDead:
-                case eAttackResult.OutOfRange:
+                {
+                    _owner.OnTargetDeadOrNoTarget();
+                    return;
+                }
+                case eAttackResult.NotAllowed_ServerRules:
                 case eAttackResult.NoValidTarget:
-                case eAttackResult.TargetNotVisible:
-                case eAttackResult.Fumbled:
-                case eAttackResult.Bodyguarded:
-                case eAttackResult.Phaseshift:
-                case eAttackResult.Grappled:
-                default:
+                {
+                    _owner.attackComponent.StopAttack();
+                    return;
+                }
+                case eAttackResult.OutOfRange:
                     break;
+            }
+
+            // Show H2H multihit attacks.
+            if (_owner is GamePlayer playerOwner)
+            {
+                string multihitMessage = null;
+
+                if (_extraSwings == 2)
+                    multihitMessage = "Triple attack!";
+                else if (_extraSwings == 3)
+                    multihitMessage = "Quad attack!";
+
+                if (!string.IsNullOrEmpty(multihitMessage))
+                    playerOwner.Out.SendMessage(multihitMessage, eChatType.CT_YouHit, eChatLoc.CL_SystemWindow);
+            }
+
+            // Show the animation.
+            if (mainHandAttackData.AttackResult is not eAttackResult.HitUnstyled and not eAttackResult.HitStyle && extraAttackData != null)
+                ShowAttackAnimation(extraAttackData, lastExtraWeapon);
+            else
+                ShowAttackAnimation(mainHandAttackData, _attackWeapon);
+
+            if (_owner.HasAbilityType(typeof(AtlasOF_PreventFlight)) &&
+                Util.Chance(35) &&
+                _target is GameLiving livingTarget &&
+                livingTarget.IsMoving &&
+                livingTarget.GetAngle(_owner) is >= 150 and < 210)
+            {
+                Spell spell = SkillBase.GetSpellByID(7083);
+
+                if (spell != null)
+                {
+                    ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(_owner, spell, SkillBase.GetSpellLine(GlobalSpellsLines.Reserved_Spells));
+                    spellHandler?.StartSpell(livingTarget);
+                }
             }
         }
 
-        public virtual void ShowAttackAnimation(AttackData ad, DbInventoryItem weapon)
+        public void DetermineDualWieldMechanic()
+        {
+            // Called externally to determine the dual wield mechanic for this attack without rolling for extra swings.
+            _ = CalculateExtraSwings(false);
+        }
+
+        private int CalculateExtraSwings(bool shouldRollExtraSwings = true)
+        {
+            DualWieldMechanic = DualWieldMechanic.None;
+
+            // NPCs don't exactly have dual wield mechanics, but are able to perform double attacks.
+            if (!_owner.attackComponent.CanUseLefthandedWeapon)
+                return 0;
+
+            if (_owner is GameNPC npcOwner)
+            {
+                if (npcOwner.LeftHandSwingChance <= 0)
+                    return 0;
+
+                DualWieldMechanic = DualWieldMechanic.Classic;
+
+                if (!shouldRollExtraSwings)
+                    return 0;
+
+                double random = _owner.RandomProvider.GetPseudoDouble(RandomContextFactory.DualWield()) * 100;
+                return random < npcOwner.LeftHandSwingChance ? 1 : 0;
+            }
+
+            if (_attackWeapon == null ||
+                _leftWeapon == null ||
+                (eObjectType) _leftWeapon.Object_Type is eObjectType.Shield)
+            {
+                return 0;
+            }
+
+            // Left Axe.
+            if (_owner.GetBaseSpecLevel(Specs.Left_Axe) > 0)
+            {
+                DualWieldMechanic = DualWieldMechanic.Classic;
+                return 1;
+            }
+
+            // DW / CD.
+            double leftHandSwingChance = _owner.attackComponent.CalculateDwCdLeftHandSwingChance();
+
+            if (leftHandSwingChance > 0)
+            {
+                DualWieldMechanic = DualWieldMechanic.Classic;
+
+                if (!shouldRollExtraSwings)
+                    return 0;
+
+                return _owner.RandomProvider.GetPseudoDouble(RandomContextFactory.DualWield()) < leftHandSwingChance ? 1 : 0;
+            }
+
+            // H2H.
+            (double doubleChance, double tripleChance, double quadChance) = _owner.attackComponent.CalculateHthSwingChances();
+
+            if (doubleChance > 0)
+            {
+                DualWieldMechanic = DualWieldMechanic.HandToHand;
+
+                if (!shouldRollExtraSwings)
+                    return 0;
+
+                double random = _owner.RandomProvider.GetPseudoDouble(RandomContextFactory.DualWield());
+
+                if (random < doubleChance)
+                    return 1;
+
+                tripleChance += doubleChance;
+
+                if (random < tripleChance)
+                    return 2;
+
+                quadChance += tripleChance;
+
+                if (random < quadChance)
+                    return 3;
+            }
+
+            return 0;
+        }
+
+        public void ShowAttackAnimation(AttackData ad, DbInventoryItem weapon)
         {
             bool showAnimation = false;
 
@@ -418,8 +259,10 @@ namespace DOL.GS
                 case eAttackResult.Missed:
                 case eAttackResult.Blocked:
                 case eAttackResult.Fumbled:
+                {
                     showAnimation = true;
                     break;
+                }
             }
 
             if (!showAnimation)
@@ -437,39 +280,53 @@ namespace DOL.GS
                 switch (ad.AttackResult)
                 {
                     case eAttackResult.Missed:
+                    {
                         resultByte = 0;
                         break;
+                    }
                     case eAttackResult.Evaded:
+                    {
                         resultByte = 3;
                         break;
+                    }
                     case eAttackResult.Fumbled:
+                    {
                         resultByte = 4;
                         break;
+                    }
                     case eAttackResult.HitUnstyled:
+                    {
                         resultByte = 10;
                         break;
+                    }
                     case eAttackResult.HitStyle:
+                    {
                         resultByte = 11;
                         break;
+                    }
                     case eAttackResult.Parried:
+                    {
                         resultByte = 1;
 
                         if (defender.ActiveWeapon != null)
                             defendersWeapon = defender.ActiveWeapon.Model;
 
                         break;
+                    }
                     case eAttackResult.Blocked:
+                    {
                         resultByte = 2;
 
                         if (defender.Inventory != null)
                         {
-                            DbInventoryItem lefthand = defender.Inventory.GetItem(eInventorySlot.LeftHandWeapon);
+                            DbInventoryItem lefthand = defender.ActiveLeftWeapon;
 
-                            if (lefthand != null && lefthand.Object_Type == (int) eObjectType.Shield)
+                            if (lefthand != null && (eObjectType) lefthand.Object_Type is eObjectType.Shield)
                                 defendersWeapon = lefthand.Model;
                         }
 
                         break;
+                    }
                 }
 
                 IEnumerable visiblePlayers = defender.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE);
@@ -487,26 +344,296 @@ namespace DOL.GS
                     switch (ad.AnimationId)
                     {
                         case -1:
+                        {
                             animationId = player.Out.OneDualWeaponHit;
                             break;
+                        }
                         case -2:
+                        {
                             animationId = player.Out.BothDualWeaponHit;
                             break;
+                        }
                         default:
+                        {
                             animationId = ad.AnimationId;
                             break;
+                        }
                     }
 
                     // It only affects the attacker's client, but for some reason, the attack animation doesn't play when the defender is different than the actually selected target.
                     // The lack of feedback makes fighting Spiritmasters very awkward because of the intercept mechanic. So until this get figured out, we'll instead play the hit animation on the attacker's selected target.
                     // Ranged attacks can be delayed (which makes the selected target unreliable) and don't seem to be affect by this anyway, so they must be ignored.
-                    GameObject animationTarget = player != m_owner || ActiveWeaponSlot == eActiveWeaponSlot.Distance || m_owner.TargetObject == defender ? defender : m_owner.TargetObject;
-
-                    player.Out.SendCombatAnimation(m_owner, animationTarget,
+                    GameObject animationTarget = player != _owner || ActiveWeaponSlot is eActiveWeaponSlot.Distance || _target == defender ? defender : _target;
+                    player.Out.SendCombatAnimation(_owner, animationTarget,
                                                    (ushort) attackersWeapon, (ushort) defendersWeapon,
                                                    animationId, 0, resultByte, defender.HealthPercent);
                 }
             }
         }
+
+        private eAttackResult? CheckAttackPrecondition()
+        {
+            if (_target is not GameLiving livingTarget)
+                return _target == null ? eAttackResult.NoTarget : eAttackResult.NoValidTarget;
+
+            if (!livingTarget.IsAlive)
+                return eAttackResult.TargetDead;
+
+            if (livingTarget.CurrentRegionID != _owner.CurrentRegionID || livingTarget.ObjectState is not eObjectState.Active)
+                return eAttackResult.NoValidTarget;
+
+            bool isRangedAttack = ActiveWeaponSlot is eActiveWeaponSlot.Distance;
+
+            if (!isRangedAttack &&
+                _owner is GamePlayer &&
+                livingTarget is not GameKeepComponent &&
+                (!_owner.IsObjectInFront(livingTarget, 120) || !_owner.TargetInView))
+            {
+                return eAttackResult.TargetNotVisible;
+            }
+
+            if (!isRangedAttack)
+            {
+                int attackRange = _owner.attackComponent.AttackRange;
+
+                if (_combatStyle != null)
+                {
+                    StyleProcInfo styleProcInfo = _combatStyle.Procs.FirstOrDefault(static x => x.Spell.SpellType is eSpellType.StyleRange);
+
+                    if (styleProcInfo != null)
+                        attackRange = (int) styleProcInfo.Spell.Value;
+                }
+
+                if (!_owner.IsWithinRadius(livingTarget, attackRange))
+                    return eAttackResult.OutOfRange;
+            }
+
+            if (!GameServer.ServerRules.IsAllowedToAttack(_owner, livingTarget, GameLoop.GameLoopTime - _owner.attackComponent.attackAction.RoundWithNoAttackTime <= 1500))
+                return eAttackResult.NotAllowed_ServerRules;
+
+            // SelectiveBlindness check used to be here.
+
+            if (livingTarget.HasAbility(Abilities.DamageImmunity))
+                return eAttackResult.NoValidTarget;
+
+            return null;
+        }
+
+        private bool MakeMainHandAttack(out AttackData attackData)
+        {
+            eAttackResult? precondition = CheckAttackPrecondition();
+
+            if (precondition.HasValue)
+            {
+                attackData = CreateAttackData(_attackWeapon, _combatStyle);
+                attackData.AttackResult = precondition.Value;
+                _owner.attackComponent.attackAction.LastAttackData = attackData;
+                _owner.attackComponent.SendInvalidAttackMessage(_target, precondition.Value);
+                return false;
+            }
+
+            _extraSwings = CalculateExtraSwings();
+            bool isDualWieldAttack = DualWieldMechanic is not DualWieldMechanic.None;
+
+            int animationId = 0;
+            byte usedHand = 0;
+
+            // Determine the weapon and animation to use.
+            if (_extraSwings > 0)
+            {
+                if (isDualWieldAttack)
+                    usedHand = 2;
+
+                if (_combatStyle == null)
+                    animationId = -2; // Virtual code for both weapons swing animation.
+            }
+            else if (_attackWeapon != null)
+            {
+                if (isDualWieldAttack && _combatStyle == null && Util.Chance(50))
+                {
+                    _attackWeapon = _leftWeapon;
+                    usedHand = 1;
+                    animationId = -1; // Virtual code for left weapon swing animation.
+                }
+            }
+
+            attackData = InitiateAttack(_attackWeapon, _combatStyle);
+
+            _owner.attackComponent.attackAction.LastAttackData = attackData;
+            _owner.attackComponent.UsedHandOnLastDualWieldAttack = attackData.IsHit ? usedHand : (byte) 0;
+
+            if (_combatStyle == null)
+                attackData.AnimationId = animationId;
+
+            // 1.89:
+            // - Characters who are attacked by stealthed archers will now target the attacking archer if the attacked player does not already have a target.
+            if (_owner.IsStealthed &&
+                attackData.AttackType is AttackData.eAttackType.Ranged &&
+                (attackData.AttackResult is eAttackResult.HitUnstyled or eAttackResult.HitStyle))
+            {
+                if (_target is GamePlayer playerTarget && playerTarget.TargetObject == null)
+                    playerTarget.Out.SendChangeTarget(attackData.Attacker);
+            }
+
+            FinalizeAttack(attackData);
+            return true;
+        }
+
+        private AttackData CreateAttackData(DbInventoryItem weapon, Style style)
+        {
+            return new()
+            {
+                Attacker = _owner,
+                Target = _target,
+                Style = style,
+                DamageType = _owner.attackComponent.AttackDamageType(weapon, this),
+                AttackType = AttackData.GetAttackType(weapon, this, _owner),
+                Weapon = weapon,
+                Interval = _interval,
+                IsOffHand = weapon != null && weapon.SlotPosition is Slot.LEFTHAND
+            };
+        }
+
+        private AttackData InitiateAttack(DbInventoryItem weapon, Style style)
+        {
+            AttackData ad = CreateAttackData(weapon, style);
+            _owner.attackComponent.MakeAttack(this, ad, _target, weapon, style, _effectiveness);
+            SwingsExecuted++;
+            return ad;
+        }
+
+        private void FinalizeAttack(AttackData attackData)
+        {
+            GameLiving target = attackData.Target;
+
+            // Notify the target of our attack (sends damage messages, should be before damage).
+            target.OnAttackedByEnemy(attackData);
+
+            // Deal damage and start effects.
+            // `AttackData` doesn't contain the armor / shield hit, so we must again fetch it from the target's inventory.
+            if (attackData.AttackResult is eAttackResult.HitUnstyled or eAttackResult.HitStyle)
+            {
+                _owner.DealDamage(attackData);
+                HandleDamageAdd(_owner, attackData);
+                _owner.CheckWeaponMagicalEffect(attackData);
+                HandleDamageShields(attackData);
+                target.OnArmorHit(attackData, target.Inventory?.GetItem((eInventorySlot) attackData.ArmorHitLocation));
+            }
+            else if (attackData.AttackResult is eAttackResult.Blocked)
+                target.OnArmorHit(attackData, target.ActiveLeftWeapon);
+
+            HandleReflexAttack(_owner, target, attackData.AttackResult);
+        }
+
+        private static void HandleDamageAdd(GameLiving owner, AttackData ad)
+        {
+            List<ECSGameSpellEffect> damageAddEffects = owner.effectListComponent.GetSpellEffects(eEffect.DamageAdd);
+
+            if (damageAddEffects == null || damageAddEffects.Count == 0)
+                return;
+
+            List<ECSGameSpellEffect> unaffectedDamageAdds = null;
+            List<ECSGameSpellEffect> regularDamageAdds = null;
+
+            foreach (ECSGameSpellEffect effect in damageAddEffects)
+            {
+                if (!effect.IsActive)
+                    continue;
+
+                if (effect.SpellHandler.Spell.EffectGroup == 99999)
+                {
+                    unaffectedDamageAdds ??= GameLoop.GetListForTick<ECSGameSpellEffect>();
+                    unaffectedDamageAdds.Add(effect);
+                }
+                else
+                {
+                    regularDamageAdds ??= GameLoop.GetListForTick<ECSGameSpellEffect>();
+                    regularDamageAdds.Add(effect);
+                }
+            }
+
+            if (unaffectedDamageAdds != null)
+            {
+                foreach (ECSGameSpellEffect damageAdd in unaffectedDamageAdds)
+                   (damageAdd.SpellHandler as DamageAddSpellHandler).Handle(ad, 1.0);
+            }
+
+            if (regularDamageAdds != null)
+            {
+                regularDamageAdds.Sort(static (a, b) => b.SpellHandler.Spell.Damage.CompareTo(a.SpellHandler.Spell.Damage));
+                int numRegularDmgAddsApplied = 0;
+
+                foreach (ECSGameSpellEffect damageAdd in regularDamageAdds)
+                {
+                    double effectiveness = damageAdd.Effectiveness * Math.ScaleB(1.0, -numRegularDmgAddsApplied);
+                    (damageAdd.SpellHandler as DamageAddSpellHandler).Handle(ad, effectiveness);
+                    numRegularDmgAddsApplied++;
+                }
+            }
+        }
+
+        private static void HandleDamageShields(AttackData ad)
+        {
+            List<ECSGameSpellEffect> damageShieldEffects = ad.Target.effectListComponent.GetSpellEffects(eEffect.FocusShield);
+
+            if (damageShieldEffects == null)
+                return;
+
+            foreach (ECSGameSpellEffect damageShield in damageShieldEffects)
+            {
+                if (!damageShield.IsActive)
+                    continue;
+
+                double effectiveness = damageShield.Effectiveness;
+                (damageShield.SpellHandler as DamageShieldSpellHandler).Handle(ad, effectiveness);
+            }
+        }
+
+        private static void HandleReflexAttack(GameLiving attacker, GameLiving target, eAttackResult attackResult)
+        {
+            // 1.65 behavior:
+            // https://forums.jeuxonline.info/sujet/250789/attaque-reflexe-moine
+            // https://web.archive.org/web/20050108223232/http://forums.drunkenfriar.com/viewtopic.php?t=47#1435&sid=037826ba0db6f1217513823c90303a52
+            // In summary:
+            // * Only works against frontal attacks.
+            // * Only works against attacks that actually hit the target.
+            // * Can counter the offhand from dual wield attacks.
+            // * Counter attacks can miss or be defended against.
+            // * Has a weird interaction with Friar's Boon, allowing counter attacks to be styled (not implemented here).
+            // * May have some kind of internal cooldown (not affecting offhands somehow) or be based on the Friar's attack speed (not implemented here).
+
+            if (!target.effectListComponent.ContainsEffectForEffectType(eEffect.ReflexAttack) || !target.IsObjectInFront(attacker, 120))
+                return;
+
+            switch (attackResult)
+            {
+                case eAttackResult.HitStyle:
+                case eAttackResult.HitUnstyled:
+                {
+                    // Don't use regular attacking code to avoid Reflex Attack triggering itself.
+                    // Currently Reflex Attack simply does damage and doesn't trigger procs or damage adds / shields.
+
+                    int attackSpeed = target.AttackSpeed(target.ActiveWeapon);
+                    WeaponAction weaponAction = new(target, attacker, target.ActiveWeapon, null, 1.0, attackSpeed, null, 0);
+                    AttackData attackData = weaponAction.InitiateAttack(target.ActiveWeapon, null);
+                    attacker.DealDamage(attackData);
+
+                    if (attackData.AttackResult is eAttackResult.HitUnstyled)
+                    {
+                        GamePlayer playerAttacker = attacker as GamePlayer;
+                        playerAttacker?.Out.SendMessage($"{target.Name} counter-attacks you for {attackData.Damage} damage.", eChatType.CT_Damaged, eChatLoc.CL_SystemWindow);
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    public enum DualWieldMechanic : byte
+    {
+        None,
+        Classic,
+        HandToHand
     }
 }

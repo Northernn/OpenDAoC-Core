@@ -9,7 +9,6 @@ using DOL.GS.API;
 using DOL.GS.PacketHandler;
 using DOL.GS.PlayerTitles;
 using DOL.GS.Quests;
-using log4net;
 
 namespace DOL.GS.WeeklyQuest.Midgard
 {
@@ -18,7 +17,7 @@ namespace DOL.GS.WeeklyQuest.Midgard
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		private const string questTitle = "[Weekly] Darkness Falls Invasion";
 		private const int minimumLevel = 30;
@@ -338,7 +337,7 @@ namespace DOL.GS.WeeklyQuest.Midgard
 			    !(player.GetConLevel(gArgs.Target) > -2)) return;
 			if (player.Group != null)
 			{
-				double minRequiredCon = Math.Ceiling((double) (player.Group.MemberCount / 3));
+				int minRequiredCon = (int) Math.Ceiling(player.Group.MemberCount / 3.0);
 				if (minRequiredCon > 3) minRequiredCon = 3;
 				if (player.Group.Leader.GetConLevel(gArgs.Target) >= minRequiredCon)
 					_mobsKilled++;

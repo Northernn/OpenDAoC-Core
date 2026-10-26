@@ -1,48 +1,53 @@
-cmake_minimum_required(VERSION 3.00)
-project(DOL_Detour)
+cmake_minimum_required(VERSION 3.0...4.1)
+project(Detour)
 
 file(GLOB SOURCES Source/*.cpp)
-add_library(dol_detour SHARED ${SOURCES})
+file(GLOB HEADERS Include/*.h Include/*.hpp)
 
-add_library(RecastNavigation::Detour ALIAS dol_detour)
-set_target_properties(dol_detour PROPERTIES DEBUG_POSTFIX -d)
+source_group("Source Files" FILES ${SOURCES})
+source_group("Header Files" FILES ${HEADERS})
 
-set(dol_detour_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Include")
+source_group("Detour\\Source" REGULAR_EXPRESSION "Source/Detour.*\\.cpp")
+source_group("Detour\\Include" REGULAR_EXPRESSION "Include/Detour.*\\.(h|hpp)")
 
-target_include_directories(dol_detour PUBLIC
-    "$<BUILD_INTERFACE:${dol_detour_INCLUDE_DIR}>"
+add_library(Detour SHARED ${SOURCES} ${HEADERS})
+
+add_library(RecastNavigation::Detour ALIAS Detour)
+set_target_properties(Detour PROPERTIES DEBUG_POSTFIX -d)
+
+set(Detour_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Include")
+
+option(RECASTNAVIGATION_DT_POLYREF64 "Use 64-bit polyrefs" ON)
+if(RECASTNAVIGATION_DT_POLYREF64)
+    target_compile_definitions(Detour PUBLIC DT_POLYREF64)
+endif()
+
+if(RECASTNAVIGATION_DT_VIRTUAL_QUERYFILTER)
+    target_compile_definitions(Detour PUBLIC DT_VIRTUAL_QUERYFILTER)
+endif()
+
+target_include_directories(Detour PUBLIC
+    "$<BUILD_INTERFACE:${Detour_INCLUDE_DIR}>"
 )
 
-find_package(Threads)
-target_link_libraries(dol_detour ${CMAKE_THREAD_LIBS_INIT})
-
-set_target_properties(dol_detour PROPERTIES
+set_target_properties(Detour PROPERTIES
         SOVERSION ${SOVERSION}
         VERSION ${LIB_VERSION}
         COMPILE_PDB_OUTPUT_DIRECTORY .
-        COMPILE_PDB_NAME "dol_detour-d"
+        COMPILE_PDB_NAME "Detour-d"
         )
 
-install(TARGETS dol_detour
+install(TARGETS Detour
+        EXPORT recastnavigation-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT library
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT library
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} ${CMAKE_INSTALL_INCLUDEDIR}/recastnavigation
         )
 
-file(GLOB INCLUDES Include/*.h)
-install(FILES ${INCLUDES} DESTINATION
+install(FILES ${HEADERS} DESTINATION
     ${CMAKE_INSTALL_INCLUDEDIR}/recastnavigation)
-if(MSVC)
-    install(FILES "$<TARGET_FILE_DIR:dol_detour>/dol_detour-d.pdb" CONFIGURATIONS "Debug" DESTINATION "lib")
-endif()
 
-# Tests
-file(GLOB TEST_SOURCES Test/*.cpp)
-file(GLOB NAVS Test/*.nav)
-add_executable(detour_test ${TEST_SOURCES})
-set(detour_test "${CMAKE_CURRENT_SOURCE_DIR}/Include")
-file(COPY ${NAVS} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-target_compile_features(detour_test PRIVATE cxx_std_17)
-target_link_libraries(detour_test dol_detour ${CMAKE_THREAD_LIBS_INIT})
-add_test(NAME detour_test COMMAND detour_test)
+if(MSVC)
+    install(FILES "$<TARGET_FILE_DIR:Detour>/Detour-d.pdb" CONFIGURATIONS "Debug" DESTINATION "lib" OPTIONAL)
+endif()

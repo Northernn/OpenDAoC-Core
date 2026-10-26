@@ -1,14 +1,9 @@
-using System;
-using System.Collections;
 using DOL.Database;
-using DOL.GS;
 using DOL.GS.Spells;
-using DOL.Events;
-using DOL.GS.PacketHandler;
 
-namespace DOL.GS.RealmAbilities.Statics 
+namespace DOL.GS.RealmAbilities.Statics
 {
-    public class StaticTempestBase : GenericBase  
+    public class StaticTempestBase : RealmAbilityStaticItemBase  
     {
 		protected override string GetStaticName() {return "Static Tempest";}
 		protected override ushort GetStaticModel() {return 2654;}
@@ -24,7 +19,7 @@ namespace DOL.GS.RealmAbilities.Statics
 			dbs.ClientEffect = GetStaticEffect();
 			dbs.Damage = 0;
 			dbs.DamageType = (int)eDamageType.Energy;
-			dbs.Target = "Enemy";
+			dbs.Target = eSpellTarget.ENEMY.ToString();
 			dbs.Radius = 0;
 			dbs.Type = eSpellType.UnresistableStun.ToString();
 			dbs.Value = 0;
@@ -35,13 +30,13 @@ namespace DOL.GS.RealmAbilities.Statics
 			dbs.CastTime = 0;
 			dbs.Range = WorldMgr.VISIBILITY_DISTANCE;
 			s = new Spell(dbs,1);
-			sl = new SpellLine("RAs","RealmAbilitys","RealmAbilitys",true);
+			sl = GlobalSpellsLines.RealmSpellsSpellLine;
 		}
 		protected override void CastSpell (GameLiving target) {
             if (!target.IsAlive) return;
-			if (GameServer.ServerRules.IsAllowedToAttack(m_caster, target, true))
+			if (GameServer.ServerRules.IsAllowedToAttack(_caster, target, true))
             {
-				ISpellHandler stun = ScriptMgr.CreateSpellHandler(m_caster, s, sl);
+				ISpellHandler stun = ScriptMgr.CreateSpellHandler(_caster, s, sl);
 				stun.StartSpell(target);
 			}
 		}

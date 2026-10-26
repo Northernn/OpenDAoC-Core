@@ -1,0 +1,192 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Threading;
+using DOL.GS.ServerProperties;
+using DOL.Logging;
+using ECS.Debug;
+
+namespace DOL.GS
+{
+    public static class GameLoop
+    {
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+
+        public const string THREAD_NAME = "GameLoop";
+
+        private static Thread _gameLoopThread;
+        private static GameLoopThreadPool _threadPool;
+        private static GameLoopTickPacer _tickPacer;
+        private static bool _running;
+        private static List<TickState> _tickSequence;
+
+        public static int DegreeOfParallelism { get; } = Environment.ProcessorCount;
+        public static double TickDuration { get; private set; }
+        public static long GameLoopTime { get; private set; }
+        public static IGameService ActiveService { get; private set; }
+
+        public static bool Init()
+        {
+            if (Interlocked.CompareExchange(ref _running, true, false))
+                return false;
+
+            TickDuration = 1000.0 / Properties.GAME_LOOP_TICK_RATE;
+
+            _gameLoopThread = new(new ThreadStart(Run))
+            {
+                Name = THREAD_NAME,
+                IsBackground = true
+            };
+            _gameLoopThread.Start();
+
+            _tickPacer = new(TickDuration);
+            _tickPacer.Start();
+            return true;
+        }
+
+        public static void Exit()
+        {
+            if (!Interlocked.CompareExchange(ref _running, false, true))
+                return;
+
+            if (Thread.CurrentThread != _gameLoopThread && _gameLoopThread.IsAlive)
+                _gameLoopThread.Join();
+
+            _tickPacer.Stop();
+            _threadPool.Dispose();
+        }
+
+        public static List<(int, double)> GetAverageTps()
+        {
+            return _tickPacer.Stats.GetAverageTicks();
+        }
+
+        public static void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action)
+        {
+            _threadPool.ExecuteForEach(items, toExclusive, action);
+        }
+
+        public static void ExecuteForEachSharded<T>(List<T>[] shards, int[] shardStartIndices, int totalCount, Action<T> action)
+        {
+            _threadPool.ExecuteForEachSharded(shards, shardStartIndices, totalCount, action);
+        }
+
+        public static T GetObjectForTick<T>() where T : IPooledObject<T>, new()
+        {
+            return _threadPool != null ? _threadPool.GetObjectForTick<T>() : new();
+        }
+
+        public static List<T> GetListForTick<T>() where T : IPooledList<T>
+        {
+            return _threadPool != null ? _threadPool.GetListForTick<T>() : new();
+        }
+
+        private static void Run()
+        {
+            if (DegreeOfParallelism == 1)
+                _threadPool = new GameLoopThreadPoolSingleThreaded();
+            else
+                _threadPool = new GameLoopThreadPoolMultiThreaded(DegreeOfParallelism);
+
+            _threadPool.Init(); // Must be done from the game loop thread.
+            BuildTickSequence();
+
+            while (Volatile.Read(ref _running))
+            {
+                try
+                {
+                    TickServices();
+                    GameLoopTime = _tickPacer.WaitForNextTick();
+                }
+                catch (Exception e)
+                {
+                    if (log.IsFatalEnabled)
+                        log.Fatal($"Critical error encountered in {nameof(GameLoop)}: {e}");
+
+                    GameServer.Instance.Stop();
+                    break;
+                }
+            }
+
+            if (log.IsInfoEnabled)
+                log.Info($"Thread \"{Thread.CurrentThread.Name}\" is stopping");
+        }
+
+        private static void TickServices()
+        {
+            Diagnostics.StartPerfCounter(THREAD_NAME);
+
+            for (int i = 0; i < _tickSequence.Count; i++)
+            {
+                TickState tickState = _tickSequence[i];
+                SynchronizationContext prevCtx = SynchronizationContext.Current;
+                GameServiceSynchronizationContext newCtx = tickState.ServiceContext;
+                SynchronizationContext.SetSynchronizationContext(newCtx);
+                ActiveService = newCtx.TargetService;
+                Diagnostics.StartPerfCounter(tickState.ProfileKey);
+
+                try
+                {
+                    tickState.TickAction();
+                }
+                finally
+                {
+                    SynchronizationContext.SetSynchronizationContext(prevCtx);
+                    Diagnostics.StopPerfCounter(tickState.ProfileKey);
+                    ActiveService = null;
+                }
+            }
+
+            Diagnostics.StopPerfCounter(THREAD_NAME);
+            Diagnostics.Tick();
+        }
+
+        private static void BuildTickSequence()
+        {
+            _tickSequence = new();
+
+            AddStep(GameLoopService.Instance, GameLoopService.Instance.Tick);
+            AddStep(TimerService.Instance, TimerService.Instance.Tick);
+            AddStep(ClientService.Instance, ClientService.Instance.BeginTick);
+            AddStep(NpcService.Instance, NpcService.Instance.Tick);
+            AddStep(AttackService.Instance, AttackService.Instance.Tick);
+            AddStep(CastingService.Instance, CastingService.Instance.Tick);
+            AddStep(EffectService.Instance, EffectService.Instance.Tick);
+            AddStep(EffectListService.Instance, EffectListService.Instance.BeginTick);
+            AddStep(EffectListService.Instance, EffectListService.Instance.EndTick);
+            AddStep(MovementService.Instance, MovementService.Instance.Tick);
+            AddStep(CraftingService.Instance, CraftingService.Instance.Tick);
+            AddStep(ReaperService.Instance, ReaperService.Instance.Tick);
+            AddStep(ZoneService.Instance, ZoneService.Instance.Tick);
+            AddStep(ClientService.Instance, ClientService.Instance.EndTick);
+            AddStep(RolloverSchedulerService.Instance, RolloverSchedulerService.Instance.Tick);
+
+            // The following services tick via RolloverSchedulerService.
+            PeriodicQuestService.Initialize();
+            HouseRentService.Initialize();
+            GravestoneService.Initialize();
+
+            static void AddStep(IGameService service, Action action)
+            {
+                string methodName = action.Method.Name;
+                string profileKey = methodName == nameof(IGameService.Tick) ? service.ServiceName : $"{service.ServiceName}.{methodName}";
+                GameServiceSynchronizationContext serviceContext = GameServiceContext.GetContextFor(service);
+                _tickSequence.Add(new(action, profileKey, serviceContext));
+            }
+        }
+
+        private sealed class TickState
+        {
+            public readonly Action TickAction;
+            public readonly string ProfileKey;
+            public readonly GameServiceSynchronizationContext ServiceContext;
+
+            public TickState(Action tickAction, string profileKey, GameServiceSynchronizationContext serviceContext)
+            {
+                TickAction = tickAction;
+                ProfileKey = profileKey;
+                ServiceContext = serviceContext;
+            }
+        }
+    }
+}

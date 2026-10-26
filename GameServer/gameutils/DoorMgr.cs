@@ -1,29 +1,10 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-using System.Collections.Generic;
 using System;
+using System.Collections.Generic;
 using System.Reflection;
-
+using System.Threading;
 using DOL.Database;
 using DOL.GS.Keeps;
-
-using log4net;
+using DOL.Logging;
 
 namespace DOL.GS
 {
@@ -32,11 +13,11 @@ namespace DOL.GS
 	/// </summary>
 	public sealed class DoorMgr
 	{
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static readonly object Lock = new object();
+		private static readonly Lock Lock = new();
 
-		private static Dictionary<int, List<GameDoorBase>> m_doors = new Dictionary<int, List<GameDoorBase>>();
+		private static Dictionary<int, GameDoorBase> m_doors = new();
 
 		public const string WANT_TO_ADD_DOORS = "WantToAddDoors";
 
@@ -57,20 +38,22 @@ namespace DOL.GS
 			return true;
 		}
 
-		public static void SaveKeepDoors()
+		public static int SaveKeepDoors()
 		{
-			if (log.IsDebugEnabled)
-				log.Debug("Saving keep doors...");
+			int count = 0;
+
 			try
 			{
 				lock (Lock)
 				{
-					foreach (List<GameDoorBase> doorList in m_doors.Values)
+					foreach (GameDoorBase door in m_doors.Values)
 					{
-						foreach (GameDoorBase door in doorList)
+						if (door.DbDoor != null &&
+							door is GameKeepDoor keepDoor &&
+							keepDoor.IsAttackableDoor)
 						{
-							if (door is GameKeepDoor keepDoor && keepDoor.IsAttackableDoor)
-								keepDoor.SaveIntoDatabase();
+							keepDoor.SaveIntoDatabase();
+							count++;
 						}
 					}
 				}
@@ -80,6 +63,8 @@ namespace DOL.GS
 				if (log.IsErrorEnabled)
 					log.Error("Error saving keep doors.", e);
 			}
+
+			return count;
 		}
 
 		public static bool LoadDoor(DbDoor door)
@@ -117,43 +102,45 @@ namespace DOL.GS
 			return true;
 		}
 
-	    public static void RegisterDoor(GameDoorBase door)
-	    {
-	        lock (Lock)
-	        {
-	            if (!m_doors.ContainsKey(door.DoorID))
-	            {
-	                List<GameDoorBase> createDoorList = new List<GameDoorBase>();
-	                m_doors.Add(door.DoorID, createDoorList);
-	            }
-
-	            List<GameDoorBase> addDoorList = m_doors[door.DoorID];
-	            addDoorList.Add(door);
-	        }
-	    }
-
-		public static void UnRegisterDoor(int doorID)
+		public static void RegisterDoor(GameDoorBase door)
 		{
-			if (m_doors.ContainsKey(doorID))
+			lock (Lock)
 			{
-				m_doors.Remove(doorID);
+				if (m_doors.TryGetValue(door.DoorId, out GameDoorBase existingDoor))
+				{
+					if (door == existingDoor)
+						return;
+				}
+				else
+				{
+					// Track doors that can't be opened via interaction, so they can be treated as obstacles.
+					if (!door.CanBeOpenedViaInteraction && !PathfindingProvider.Instance.RegisterDoor(door) && log.IsErrorEnabled)
+					{
+						log.Error($"Failed to register door in pathfinding provider, possible navmesh/object location mismatch " +
+							$"(Id: {door.DoorId}) " +
+							$"(Name: {door.Name}) " +
+							$"(Loc: {door.X},{door.Y},{door.Z}) " +
+							$"(ZoneId: {door.CurrentZone?.ID}) " +
+							$"(RegionId: {door.CurrentRegionID})");
+					}
+				}
+
+				m_doors[door.DoorId] = door;
 			}
+		}
+
+		public static void UnregisterDoor(int doorID)
+		{
+			m_doors.Remove(doorID);
 		}
 
 		/// <summary>
 		/// This function get the door object by door index
 		/// </summary>
 		/// <returns>return the door with the index</returns>
-		public static List<GameDoorBase> getDoorByID(int id)
+		public static GameDoorBase GetDoorByID(int id)
 		{
-			if (m_doors.ContainsKey(id))
-			{
-				return m_doors[id];
-			}
-			else
-			{
-				return new List<GameDoorBase>();
-			}
+			return m_doors.TryGetValue(id, out GameDoorBase value) ? value : null;
 		}
 	}
 }

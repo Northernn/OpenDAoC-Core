@@ -6,7 +6,6 @@ using System.Text;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS.ServerProperties;
-using log4net;
 
 namespace DOL.GS.Keeps
 {
@@ -14,9 +13,9 @@ namespace DOL.GS.Keeps
 	/// <summary>
 	/// A keepComponent
 	/// </summary>
-	public class GameKeepComponent : GameLiving, IComparable, IGameKeepComponent
+	public class GameKeepComponent : GameLiving, IComparable, IGameKeepComponent, IPooledList<GameKeepComponent>
 	{
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		protected readonly ushort INVISIBLE_MODEL = 150;
 
@@ -118,14 +117,14 @@ namespace DOL.GS.Keeps
 
 		public Hashtable Positions { get; }
 
-		protected string m_CreateInfo = "";
+		protected string m_CreateInfo = string.Empty;
 		#endregion
 
 		public override int RealmPointsValue => 0;
 
 		public override long ExperienceValue => 0;
 
-		public override int AttackRange => 1000;
+		public override int MeleeAttackRange => 1000;
 
 		public override IList GetExamineMessages(GamePlayer player)
 		{
@@ -140,33 +139,14 @@ namespace DOL.GS.Keeps
 		}
 
 		/// <summary>
-		/// Procs don't normally fire on game keep components
-		/// </summary>
-		public override bool AllowWeaponMagicalEffect(AttackData ad, DbInventoryItem weapon, Spell weaponSpell)
-		{
-			if (weapon.Flags == 10) //Bruiser or any other item needs Itemtemplate "Flags" set to 10 to proc on keep components
-				return true;
-			else return false;
-		}
-
-		/// <summary>
 		/// do not regen
 		/// </summary>
 		public override void StartHealthRegeneration()
 		{
-			m_repairTimer = new ECSGameTimer(this);
-			m_repairTimer.Callback = new ECSGameTimer.ECSTimerCallback(RepairTimerCallback);
-			m_repairTimer.Interval = repairInterval;
-			m_repairTimer.Start(1);
-		}
+			if (m_healthRegenerationTimer.IsAlive || Health >= MaxHealth)
+				return;
 
-		public virtual void RemoveTimers()
-		{
-			if (m_repairTimer != null)
-			{
-				m_repairTimer.Stop();
-				m_repairTimer = null;
-			}
+			m_healthRegenerationTimer.Start(REPAIR_INTERVAL);
 		}
 
 		public GameKeepComponent()
@@ -213,7 +193,6 @@ namespace DOL.GS.Keeps
 			LoadPositions();
 			AddToWorld();
 			FillPositions();
-			RepairedHealth = MaxHealth;
 			m_CreateInfo = component.CreateInfo;
 			StartHealthRegeneration();
 		}
@@ -457,7 +436,7 @@ namespace DOL.GS.Keeps
 				{
 					m_oldHealthPercent = HealthPercent;
 
-					foreach (GamePlayer player in ClientService.GetPlayersOfRegion(CurrentRegion))
+					foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(CurrentRegion))
 					{
 						ClientService.UpdateObjectForPlayer(player, this);
 						player.Out.SendKeepComponentDetailUpdate(this); // I know this works, not sure if ObjectUpdate is needed - Tolakram
@@ -468,52 +447,45 @@ namespace DOL.GS.Keeps
 
 		public override void ModifyAttack(AttackData attackData)
 		{
-			// Allow a GM to use commands to damage components, regardless of toughness setting
-			if (attackData.DamageType == eDamageType.GM)
+			if (attackData.DamageType is eDamageType.GM)
 				return;
 
 			int toughness = Properties.SET_STRUCTURES_TOUGHNESS;
+			GameLiving source = attackData.Attacker;
 			int baseDamage = attackData.Damage;
 			int styleDamage = attackData.StyleDamage;
-			int criticalDamage = 0;
-
-			GameLiving source = attackData.Attacker;
+			int criticalDamage = attackData.CriticalDamage;
 
 			if (source is GamePlayer)
 			{
-				baseDamage = (baseDamage - (baseDamage * 5 * Keep.Level / 100)) * toughness / 100;
-				styleDamage = (styleDamage - (styleDamage * 5 * Keep.Level / 100)) * toughness / 100;
+				baseDamage = GetAdjustedDamage(baseDamage, toughness, Keep.Level);
+				styleDamage = GetAdjustedDamage(styleDamage, toughness, Keep.Level);
+				criticalDamage = GetAdjustedDamage(criticalDamage, toughness, Keep.Level);
 			}
-			else if (source is GameNPC)
+			else if (source is GameNPC npcSource)
 			{
 				if (!Properties.STRUCTURES_ALLOWPETATTACK)
 				{
+					attackData.AttackResult = eAttackResult.NotAllowed_ServerRules;
 					baseDamage = 0;
 					styleDamage = 0;
-					attackData.AttackResult = eAttackResult.NotAllowed_ServerRules;
+					criticalDamage = 0;
 				}
 				else
 				{
-					baseDamage = (baseDamage - (baseDamage * 5 * Keep.Level / 100)) * toughness / 100;
-					styleDamage = (styleDamage - (styleDamage * 5 * Keep.Level / 100)) * toughness / 100;
+					baseDamage = GetAdjustedDamage(baseDamage, toughness, Keep.Level);
+					styleDamage = GetAdjustedDamage(styleDamage, toughness, Keep.Level);
+					criticalDamage = GetAdjustedDamage(criticalDamage, toughness, Keep.Level);
 
-					if (((GameNPC)source).Brain is AI.Brain.IControlledBrain)
+					if (npcSource.Brain is AI.Brain.IControlledBrain brain && brain.Owner is GamePlayer player)
 					{
-						GamePlayer player = (((AI.Brain.IControlledBrain)((GameNPC)source).Brain).Owner as GamePlayer);
-						if (player != null)
-						{
-							// special considerations for pet spam classes
-							if (player.CharacterClass.ID == (int)eCharacterClass.Theurgist || player.CharacterClass.ID == (int)eCharacterClass.Animist)
-							{
-								baseDamage = (int)(baseDamage * Properties.PET_SPAM_DAMAGE_MULTIPLIER);
-								styleDamage = (int)(styleDamage * Properties.PET_SPAM_DAMAGE_MULTIPLIER);
-							}
-							else
-							{
-								baseDamage = (int)(baseDamage * Properties.PET_DAMAGE_MULTIPLIER);
-								styleDamage = (int)(styleDamage * Properties.PET_DAMAGE_MULTIPLIER);
-							}
-						}
+						double multiplier = (eCharacterClass) player.CharacterClass.ID is eCharacterClass.Theurgist or eCharacterClass.Animist ?
+							Properties.PET_SPAM_DAMAGE_MULTIPLIER :
+							Properties.PET_DAMAGE_MULTIPLIER;
+
+						baseDamage = (int) (baseDamage * multiplier);
+						styleDamage = (int) (styleDamage * multiplier);
+						criticalDamage = (int) (criticalDamage * multiplier);
 					}
 				}
 			}
@@ -521,6 +493,11 @@ namespace DOL.GS.Keeps
 			attackData.Damage = baseDamage;
 			attackData.StyleDamage = styleDamage;
 			attackData.CriticalDamage = criticalDamage;
+
+			static int GetAdjustedDamage(int damage, int toughness, int level)
+			{
+				return (damage - damage * 5 * level / 100) * toughness / 100;
+			}
 		}
 
 		public override void Die(GameObject killer)
@@ -542,14 +519,13 @@ namespace DOL.GS.Keeps
 				}
 			}
 
-			foreach (GamePlayer player in ClientService.GetPlayersOfRegion(CurrentRegion))
+			foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(CurrentRegion))
 				player.Out.SendKeepComponentDetailUpdate(this);
 		}
 
 		public override void Delete()
 		{
 			StopHealthRegeneration();
-			RemoveTimers();
 			HookPoints.Clear();
 			Positions.Clear();
 			Keep = null;
@@ -629,7 +605,6 @@ namespace DOL.GS.Keeps
 			get { return m_isRaized; }
 			set
 			{
-				RepairedHealth = 0;
 				m_isRaized = value;
 				if (value == true)
 				{
@@ -643,18 +618,17 @@ namespace DOL.GS.Keeps
 			}
 		}
 
-		public int RepairedHealth = 0;
+		protected const int REPAIR_INTERVAL = 30 * 60 * 1000;
 
-		protected ECSGameTimer m_repairTimer;
-		protected static int repairInterval = 30 * 60 * 1000;
-
-		public virtual int RepairTimerCallback(ECSGameTimer timer)
+		protected override int HealthRegenerationTimerCallback(ECSGameTimer timer)
 		{
-			if (HealthPercent == 100 || Keep.InCombat)
-				return repairInterval;
+			if (Keep == null || HealthPercent >= 100)
+				return 0;
 
-			Repair((MaxHealth / 100) * 5);
-			return repairInterval;
+			if (!Keep.InCombat)
+				Repair(MaxHealth / 100 * 5);
+
+			return REPAIR_INTERVAL;
 		}
 
 		public virtual void Repair(int amount)
@@ -662,11 +636,12 @@ namespace DOL.GS.Keeps
 			if (amount > 0)
 			{
 				byte oldStatus = Status;
-				Health += amount;
+				Health = Math.Min(Health + amount, MaxHealth);
 				m_oldHealthPercent = HealthPercent;
+
 				if (oldStatus != Status)
 				{
-					foreach (GamePlayer player in ClientService.GetPlayersOfRegion(CurrentRegion))
+					foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(CurrentRegion))
 						player.Out.SendKeepComponentDetailUpdate(this);
 				}
 
@@ -676,8 +651,6 @@ namespace DOL.GS.Keeps
 					foreach (GameKeepComponent component in Keep.KeepComponents)
 						component.FillPositions();
 				}
-
-				RepairedHealth = Health;
 			}
 		}
 

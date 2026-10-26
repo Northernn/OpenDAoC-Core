@@ -10,7 +10,7 @@ namespace DOL.GS.Commands
          "/setsalvage - the item to modify have to be in lastbagpack slot (item saved and updated automatically)")]
     public class SetSalvageCommandHandler : AbstractCommandHandler, ICommandHandler
     {
-        private static readonly log4net.ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public void OnCommand(GameClient client, string[] args)
         {
@@ -49,11 +49,11 @@ namespace DOL.GS.Commands
                 DisplayMessage(client, "This item can' be configured.");
                 return;
             }
-            var sCalc = new SalvageCalculator();
-            var ReturnSalvage = sCalc.GetSalvage(client.Player, item);
+
+            var ReturnSalvage = SalvageCalculator.GetSalvage(client.Player, item);
 
             var oldprice = item.Price;
-            
+
             item.Condition = 50000;
             item.MaxCondition = 50000;
             item.Charges = item.MaxCharges;
@@ -62,7 +62,7 @@ namespace DOL.GS.Commands
             
             GameServer.Database.SaveObject(item.Template);
             GameServer.Database.UpdateInCache<DbItemTemplate>(item.Template.Id_nb);
-            client.Out.SendInventoryItemsUpdate(new DbInventoryItem[] { item });
+            client.Out.SendInventoryItemsUpdate([item]);
 
             DisplayMessage(client, $"{item.Name} price changed from {oldprice} to {item.Price}!");
         }

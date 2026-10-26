@@ -1,22 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -85,7 +66,7 @@ namespace DOL.GS
 		/// <returns>list with string messages</returns>
 		public override IList GetExamineMessages(GamePlayer player)
 		{
-			string TrainerClassName = "";
+			string TrainerClassName = string.Empty;
             switch (player.Client.Account.Language)
 			{
                 case "DE":
@@ -179,7 +160,7 @@ namespace DOL.GS
 		/// <returns></returns>
 		public virtual bool CanTrainChampionLevels(GamePlayer player)
 		{
-			return player.Level >= player.MaxLevel && player.Champion && m_championTrainerType != eChampionTrainerType.None && m_championTrainerType != player.CharacterClass.ChampionTrainerType();
+			return player.Level >= GamePlayer.MAX_LEVEL && player.Champion && m_championTrainerType != eChampionTrainerType.None && m_championTrainerType != player.CharacterClass.ChampionTrainerType();
 		}
 
 		/// <summary>
@@ -211,7 +192,7 @@ namespace DOL.GS
 					}
 					player.RefreshSpecDependantSkills(false);
 					// Notify Player of points
-					player.Out.SendUpdatePlayerSkills();
+					player.Out.SendUpdatePlayerSkills(true);
 					player.Out.SendUpdatePoints();
 					player.Out.SendUpdatePlayer();
 					player.Out.SendTrainerWindow();
@@ -244,7 +225,7 @@ namespace DOL.GS
 		protected virtual void CheckAbilityToUseItem(GamePlayer player)
 		{
 			// drop any equiped-non usable item, in inventory or on the ground if full
-			lock (player.Inventory)
+			lock (player.Inventory.Lock)
 			{
 				foreach (DbInventoryItem item in player.Inventory.EquippedItems)
 				{
@@ -316,25 +297,24 @@ namespace DOL.GS
 		/// <summary>
 		/// Check if Player can be Promoted
 		/// </summary>
-		/// <param name="player"></param>
 		public virtual bool CanPromotePlayer(GamePlayer player)
 		{
-			var baseClass = ScriptMgr.FindCharacterBaseClass((int)TrainedClass);
-			ICharacterClass pickedClass = ScriptMgr.FindCharacterClass((int)TrainedClass);
+			var baseClass = ScriptMgr.FindCharacterBaseClass((int) TrainedClass);
+			ICharacterClass pickedClass = ScriptMgr.FindCharacterClass((int) TrainedClass);
 
 			// Error or Base Trainer...
-			if (baseClass == null || baseClass.ID == (int)TrainedClass)
+			if (baseClass == null || (eCharacterClass) baseClass.ID == TrainedClass)
 				return false;
-			
+
 			if (player.Level < 5 || player.CharacterClass.ID != baseClass.ID)
 				return false;
-			
-			if(pickedClass.EligibleRaces.Exists(s => (short)s.ID == player.Race))
+
+			if (!pickedClass.EligibleRaces.Exists(s => s.ID == (eRace) player.Race))
 				return false;
-			
-			if (GlobalConstants.CLASS_GENDER_CONSTRAINTS_DICT.ContainsKey(TrainedClass) && GlobalConstants.CLASS_GENDER_CONSTRAINTS_DICT[TrainedClass] != player.Gender)
+
+			if (GlobalConstants.CLASS_GENDER_CONSTRAINTS_DICT.TryGetValue(TrainedClass, out eGender gender) && gender != player.Gender)
 				return false;
-			    
+
 			return true;
 		}
 
@@ -358,14 +338,14 @@ namespace DOL.GS
 				player.RemoveAllAbilities();
 				player.RemoveAllSpellLines();
 
-				if (messageToPlayer != "")
+				if (messageToPlayer != string.Empty)
 					player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "GameTrainer.PromotePlayer.Says", this.Name, messageToPlayer), eChatType.CT_System, eChatLoc.CL_PopupWindow);
 				player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "GameTrainer.PromotePlayer.Upgraded", player.CharacterClass.Name), eChatType.CT_Important, eChatLoc.CL_SystemWindow);
 
 				player.CharacterClass.OnLevelUp(player, player.Level);
 				player.RefreshSpecDependantSkills(true);
 				player.StartPowerRegeneration();
-				player.Out.SendUpdatePlayerSkills();
+				player.Out.SendUpdatePlayerSkills(true);
 				player.Out.SendUpdatePlayer();
 				// drop any non usable item
 				CheckAbilityToUseItem(player);

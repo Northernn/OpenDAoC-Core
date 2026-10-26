@@ -125,7 +125,7 @@ namespace DOL.GS.Keeps
                 Albion_Caster.AddNPCEquipment(eInventorySlot.HandsArmor, 142);
                 Albion_Caster.AddNPCEquipment(eInventorySlot.FeetArmor, 143);
                 Albion_Caster.AddNPCEquipment(eInventorySlot.RightHandWeapon, 13);
-                Albion_Caster.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 1170);
+                Albion_Caster.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 19);
                 Albion_Caster = Albion_Caster.CloseTemplate();
                 Albion_Caster.GetItem(eInventorySlot.TwoHandWeapon).Hand = (int)eHandFlag.Two;
             }
@@ -642,8 +642,6 @@ namespace DOL.GS.Keeps
 							guard.Inventory = ClothingMgr.Albion_Lord.CloneTemplate();
 						else if (guard is GuardMerchant)
 							guard.Inventory = ClothingMgr.Albion_Merchant.CloneTemplate();
-						else if (guard is GuardCurrencyMerchant)
-							guard.Inventory = ClothingMgr.Albion_Merchant.CloneTemplate();
 						else if (guard is GuardHealer)
 							guard.Inventory = ClothingMgr.Albion_Healer.CloneTemplate();
 						else if (guard is GuardArcher)
@@ -678,8 +676,6 @@ namespace DOL.GS.Keeps
 							guard.Inventory = ClothingMgr.Midgard_Lord.CloneTemplate();
 						else if (guard is GuardMerchant)
 							guard.Inventory = ClothingMgr.Midgard_Merchant.CloneTemplate();
-						else if (guard is GuardCurrencyMerchant)
-							guard.Inventory = ClothingMgr.Midgard_Merchant.CloneTemplate();
 						else if (guard is GuardHealer)
 							guard.Inventory = ClothingMgr.Midgard_Healer.CloneTemplate();
 						else if (guard is GuardArcher)
@@ -713,8 +709,6 @@ namespace DOL.GS.Keeps
                         else if (guard is GuardLord || guard is MissionMaster)
 							guard.Inventory = ClothingMgr.Hibernia_Lord.CloneTemplate();
 						else if (guard is GuardMerchant)
-							guard.Inventory = ClothingMgr.Hibernia_Merchant.CloneTemplate();
-						else if (guard is GuardCurrencyMerchant)
 							guard.Inventory = ClothingMgr.Hibernia_Merchant.CloneTemplate();
 						else if (guard is GuardHealer)
 							guard.Inventory = ClothingMgr.Hibernia_Healer.CloneTemplate();

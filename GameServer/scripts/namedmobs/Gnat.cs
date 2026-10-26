@@ -1,11 +1,6 @@
-﻿using System;
-using System.Collections;
-using DOL.AI.Brain;
-using DOL.Events;
-using DOL.Database;
+﻿using DOL.AI.Brain;
 using DOL.GS;
 using DOL.GS.PacketHandler;
-using DOL.GS.Styles;
 
 namespace DOL.GS.Scripts
 {
@@ -14,8 +9,6 @@ namespace DOL.GS.Scripts
         public Gnat() : base()
         {
         }
-
-        public static GameNPC SI_Gnat = new GameNPC();
 
         public override bool AddToWorld()
         {
@@ -26,14 +19,12 @@ namespace DOL.GS.Scripts
             Gender = eGender.Neutral;
 
             BodyType = 6; // Humanoid
-            MaxDistance = 1500;
             TetherRange = 2000;
             RoamingRange = 400;
             GnatBrain sBrain = new GnatBrain();
             SetOwnBrain(sBrain);
             sBrain.AggroLevel = 100;
             sBrain.AggroRange = 500;
-            GnatBrain.spawnants = true;
             base.AddToWorld();
             return true;
         }
@@ -44,14 +35,13 @@ namespace DOL.AI.Brain
 {
     public class GnatBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public GnatBrain() : base()
         {
         }
 
-        public static bool spawnants = true;
+        public bool spawnants = true;
 
         public override void Think()
         {
@@ -74,7 +64,7 @@ namespace DOL.AI.Brain
                     {
                         if (mob_c != null)
                         {
-                            if ((mob_c.Name.ToLower() == "fiery ant") && mob_c.IsAlive && mob_c.IsAvailable)
+                            if ((mob_c.Name.ToLower() == "fiery ant") && mob_c.IsAlive && mob_c.IsAvailableToJoinFight)
                             {
                                 if (mob_c.Brain is GnatAntsBrain && mob_c.RespawnInterval == -1)
                                 {
@@ -103,7 +93,6 @@ namespace DOL.AI.Brain
                 Add.Y = Body.Y + Util.Random(50, 80);
                 Add.Z = Body.Z;
                 Add.CurrentRegion = Body.CurrentRegion;
-                Add.IsWorthReward = false;
                 Add.Heading = Body.Heading;
                 Add.AddToWorld();
             }
@@ -119,8 +108,6 @@ namespace DOL.GS
         {
         }
 
-        public static GameNPC SI_Gnatants = new GameNPC();
-
         public override int MaxHealth
         {
             get { return 450 * Constitution / 100; }
@@ -133,9 +120,7 @@ namespace DOL.GS
             MeleeDamageType = eDamageType.Thrust;
             RoamingRange = 350;
             RespawnInterval = -1;
-            MaxDistance = 1500;
             TetherRange = 2000;
-            IsWorthReward = false; //worth no reward
             Size = (byte) Util.Random(8, 12);
             Level = (byte) Util.Random(30, 34);
             Realm = eRealm.None;
@@ -146,9 +131,7 @@ namespace DOL.GS
             return true;
         }
 
-        public override void DropLoot(GameObject killer) //no loot
-        {
-        }
+        public override bool CanDropLoot => false;
 
         public override void Die(GameObject killer)
         {
@@ -161,20 +144,13 @@ namespace DOL.AI.Brain
 {
     public class GnatAntsBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public GnatAntsBrain()
             : base()
         {
             AggroLevel = 100;
             AggroRange = 450;
-        }
-
-        public override void Think()
-        {
-            Body.IsWorthReward = false;
-            base.Think();
         }
     }
 }

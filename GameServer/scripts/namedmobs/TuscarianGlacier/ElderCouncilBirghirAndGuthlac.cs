@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.GS;
@@ -23,15 +22,8 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -56,15 +48,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60160391);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
 
@@ -72,9 +56,6 @@ namespace DOL.GS
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 19, 0);
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-            BirghirBrain.IsTargetPicked = false;
-            BirghirBrain.message1 = false;
-            BirghirBrain.IsPulled = false;
 
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
@@ -92,8 +73,7 @@ namespace DOL.AI.Brain
 {
     public class BirghirBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public BirghirBrain()
             : base()
@@ -104,13 +84,13 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public static GamePlayer randomtarget = null;
-        public static GamePlayer RandomTarget
+        public GamePlayer randomtarget = null;
+        public GamePlayer RandomTarget
         {
             get { return randomtarget; }
             set { randomtarget = value; }
@@ -119,13 +99,13 @@ namespace DOL.AI.Brain
         {
             if (Body.IsAlive)
             {
-                List<GameLiving> enemies = AggroList.Keys.ToList();
+                List<GameLiving> enemies = GetUnorderedAggroList();
                 foreach (GamePlayer player in Body.GetPlayersInRadius(2500))
                 {
                     if (player != null)
                     {
                         if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-                            AggroList.TryAdd(player, new());
+                            AddToAggroList(player);
                     }
                 }
                 if (enemies.Count == 0)
@@ -181,9 +161,9 @@ namespace DOL.AI.Brain
             }
             return 0;
         }
-        public static bool IsTargetPicked = false;
-        public static bool message1 = false;
-        public static bool IsPulled = false;
+        public bool IsTargetPicked = false;
+        public bool message1 = false;
+        public bool IsPulled = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if (IsPulled == false)
@@ -278,12 +258,11 @@ namespace DOL.AI.Brain
                     spell.Value = 80;
                     spell.Radius = 450;
                     spell.SpellID = 11928;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.StrengthConstitutionDebuff.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_Icelord_SC_Debuff = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_SC_Debuff);
                 }
                 return m_Icelord_SC_Debuff;
             }
@@ -307,12 +286,11 @@ namespace DOL.AI.Brain
                     spell.Range = 1500;
                     spell.Value = 19;
                     spell.SpellID = 11929;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.CombatSpeedDebuff.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_Icelord_Haste_Debuff = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_Haste_Debuff);
                 }
                 return m_Icelord_Haste_Debuff;
             }
@@ -341,7 +319,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_Icelord_Bolt = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_Bolt);
                 }
                 return m_Icelord_Bolt;
             }
@@ -370,7 +347,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_Icelord_dd = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_dd);
                 }
                 return m_Icelord_dd;
             }
@@ -397,15 +373,8 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -426,7 +395,7 @@ namespace DOL.GS
         {
             get { return 100000; }
         }
-        public override void Die(GameObject killer) //on kill generate orbs
+        public override void ProcessDeath(GameObject killer) //on kill generate orbs
         {
             foreach (GameNPC npc in this.GetNPCsInRadius(5000))
             {
@@ -436,22 +405,14 @@ namespace DOL.GS
                         npc.Die(this);
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
 
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60160392);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Giant;
 
@@ -459,11 +420,6 @@ namespace DOL.GS
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 19, 0);
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-
-            GuthlacBrain.message1 = false;
-            GuthlacBrain.IsBombUp = false;
-            GuthlacBrain.RandomTarget = null;
-            GuthlacBrain.IsPulled2 = false;
 
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
@@ -481,7 +437,7 @@ namespace DOL.AI.Brain
 {
     public class GuthlacBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public GuthlacBrain()
             : base()
         {
@@ -491,15 +447,15 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public static bool message1 = false;
-        public static bool IsBombUp = false;
-        public static GameLiving randomtarget = null;
-        public static GameLiving RandomTarget
+        public bool message1 = false;
+        public bool IsBombUp = false;
+        public GameLiving randomtarget = null;
+        public GameLiving RandomTarget
         {
             get { return randomtarget; }
             set { randomtarget = value; }
@@ -507,10 +463,10 @@ namespace DOL.AI.Brain
         List<GamePlayer> PlayersToDD = new List<GamePlayer>();
 
         #region Root && debuff
-        public static bool CanCast = false;
-        public static bool StartCastRoot = false;
-        public static GameLiving randomtarget2 = null;
-        public static GameLiving RandomTarget2
+        public bool CanCast = false;
+        public bool StartCastRoot = false;
+        public GameLiving randomtarget2 = null;
+        public GameLiving RandomTarget2
         {
             get { return randomtarget2; }
             set { randomtarget2 = value; }
@@ -534,7 +490,7 @@ namespace DOL.AI.Brain
                     if (CanCast == false)
                     {
                         GamePlayer Target = (GamePlayer)Enemys_To_Root[Util.Random(0, Enemys_To_Root.Count - 1)];//pick random target from list
-                        RandomTarget2 = Target;//set random target to static RandomTarget
+                        RandomTarget2 = Target;
                         new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastRoot), 1000);
                         CanCast = true;
                     }
@@ -569,7 +525,7 @@ namespace DOL.AI.Brain
         }
         #endregion
 
-        public static bool IsPulled2 = false;
+        public bool IsPulled2 = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if (IsPulled2 == false)
@@ -598,7 +554,6 @@ namespace DOL.AI.Brain
                 Body.Health = Body.MaxHealth;
                 IsPulled2 = false;
                 RandomTarget = null;
-                FrozenBomb.FrozenBombCount = 0;
                 message1 = false;
                 IsBombUp = false;
                 StartCastRoot = false;
@@ -643,7 +598,7 @@ namespace DOL.AI.Brain
                             PlayersToDD.Add(player);
                     }
                 }
-                if (IsBombUp == false && FrozenBomb.FrozenBombCount == 0)
+                if (IsBombUp == false && !IsFrozenBombUp())
                 {
                     if (PlayersToDD.Count > 0)
                     {
@@ -666,9 +621,14 @@ namespace DOL.AI.Brain
         }
 
         #region Spawn Frost Bomb
+        private GameNPC _frozenBomb;
+        private bool IsFrozenBombUp()
+        {
+            return _frozenBomb != null && _frozenBomb.IsAlive && _frozenBomb.ObjectState is GameObject.eObjectState.Active;
+        }
         public int SpawnBombTimer(ECSGameTimer timer)
         {
-            if (FrozenBomb.FrozenBombCount == 0)
+            if (!IsFrozenBombUp())
                 SpawnFrozenBomb();
 
             new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(ResetBomb), 5000);
@@ -703,6 +663,7 @@ namespace DOL.AI.Brain
             npc.Heading = Body.Heading;
             npc.CurrentRegion = Body.CurrentRegion;
             npc.AddToWorld();
+            _frozenBomb = npc;
         }
         #endregion
 
@@ -732,7 +693,6 @@ namespace DOL.AI.Brain
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_DebuffDQ = new Spell(spell, 60);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_DebuffDQ);
                 }
                 return m_DebuffDQ;
             }
@@ -755,13 +715,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Root";
                     spell.TooltipId = 2678;
                     spell.SpellID = 11931;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "SpeedDecrease";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Body;
                     m_GuthlacRoot = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_GuthlacRoot);
                 }
                 return m_GuthlacRoot;
             }
@@ -792,7 +751,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Energy;
                     m_Icelord_dd = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Icelord_dd);
                 }
                 return m_Icelord_dd;
             }
@@ -870,10 +828,8 @@ namespace DOL.GS
             // 85% ABS is cap.
             return 0.15;
         }
-        public static int FrozenBombCount = 0;
         public override void Die(GameObject killer)
         {
-            FrozenBombCount = 0;
             base.Die(null);
         }
         public override int MaxHealth
@@ -885,12 +841,10 @@ namespace DOL.GS
             Model = 665;
             Size = 100;
             MaxSpeedBase = 0;
-            FrozenBombCount = 1;
             Name = "Ice Spike";
             Level = (byte)Util.Random(62, 66);
 
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             Realm = eRealm.None;
             RespawnInterval = -1;
 
@@ -930,7 +884,6 @@ namespace DOL.GS
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_GuthlacIceSpike_aoe = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_GuthlacIceSpike_aoe);
                 }
                 return m_GuthlacIceSpike_aoe;
             }
@@ -942,31 +895,14 @@ namespace DOL.AI.Brain
 {
     public class FrozenBombBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public FrozenBombBrain()
             : base()
         {
-            AggroLevel = 0;
-            AggroRange = 0;
+            AggroLevel = 100;
+            AggroRange = 2500;
             ThinkInterval = 1500;
-        }
-        public override void Think()
-        {
-            if (Body.IsAlive)
-            {
-                //FSM.SetCurrentState(eFSMStateType.AGGRO);
-                foreach (GamePlayer player in Body.GetPlayersInRadius(2500))
-                {
-                    if (player != null)
-                    {
-                        if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-                            AggroList.TryAdd(player, new(100));
-                    }
-                }
-            }
-            base.Think();
         }
     }
 }

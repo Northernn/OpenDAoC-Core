@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -72,12 +65,10 @@ namespace DOL.GS
 			Empathy = 400;
 
 			MaxSpeedBase = 250;
-			MaxDistance = 3500;
 			TetherRange = 3800;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			SarcondinaBrain sbrain = new SarcondinaBrain();
 			SetOwnBrain(sbrain);
@@ -86,14 +77,14 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
 		{
 			foreach (GameNPC npc in GetNPCsInRadius(5000))
 			{
 				if (npc != null && npc.IsAlive && npc.RespawnInterval == -1 && npc.PackageID == "SarcondinaAdd")
 					npc.Die(this);
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
 		public override void OnAttackEnemy(AttackData ad) //on enemy actions
 		{
@@ -101,7 +92,7 @@ namespace DOL.GS
 			{
 				if (ad != null && (ad.AttackResult == eAttackResult.HitUnstyled || ad.AttackResult == eAttackResult.HitStyle))
 				{
-					if(!ad.Target.effectListComponent.ContainsEffectForEffectType(eEffect.DamageOverTime))
+					if(!ad.Target.IsPoisoned)
 						CastSpell(Sarcondina_Dot, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells));
 				}
 			}
@@ -132,25 +123,25 @@ namespace DOL.GS
 					spell.Duration = 20;
 					spell.Frequency = 40;
 					spell.SpellID = 11805;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.SpellGroup = 1800;
 					spell.EffectGroup = 1500;
 					spell.Type = eSpellType.DamageOverTime.ToString();
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Matter;
 					m_Sarcondina_Dot = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Sarcondina_Dot);
 				}
 				return m_Sarcondina_Dot;
 			}
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class SarcondinaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public SarcondinaBrain() : base()
 		{
 			AggroLevel = 100;
@@ -203,7 +194,6 @@ namespace DOL.AI.Brain
 				add.CurrentRegion = Body.CurrentRegion;
 				add.Heading = Body.Heading;
 				add.Faction = FactionMgr.GetFactionByID(64);
-				add.Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 				StandardMobBrain brain = new StandardMobBrain();
 				add.SetOwnBrain(brain);
 				brain.AggroRange = 800;
@@ -215,4 +205,3 @@ namespace DOL.AI.Brain
 		}
 	}
 }
-

@@ -19,6 +19,13 @@ namespace DOL.GS.Spells
 			get { return false; }
 		}
 
+		protected override double CalculateDamageEffectiveness()
+		{
+			// Half of the damage is magical.
+			// Subtract any spelldamage bonus and re-calculate after half damage is calculated.
+			return CasterEffectiveness * (0.5 - Caster.GetModified(eProperty.SpellDamage) * 0.01);
+		}
+
 		/// <summary>
 		/// Fire arrow
 		/// </summary>
@@ -56,16 +63,6 @@ namespace DOL.GS.Spells
 			}
 
 			return true;
-		}
-
-		private void DealDamageCheckLOS(GamePlayer player, bool response, ushort targetOID)
-		{
-			if (response)
-			{
-				GameLiving target = (GameLiving)(Caster.CurrentRegion.GetObject(targetOID));
-				if (target != null)
-					DealDamage(target);
-			}
 		}
 
 		private void DealDamage(GameLiving target)
@@ -115,15 +112,17 @@ namespace DOL.GS.Spells
 
 			protected override int OnTick(ECSGameTimer timer)
 			{
+				// A lot of things here is outdated and need to be rewritten.
+
 				GameLiving target = m_arrowTarget;
 				GameLiving caster = (GameLiving) timer.Owner;
 
 				if (target == null || !target.IsAlive || target.ObjectState != GameObject.eObjectState.Active || target.CurrentRegionID != caster.CurrentRegionID)
 					return 0;
 
-				int missrate = 100 - m_handler.CalculateToHitChance(target);
+				double missrate = 100 - m_handler.CalculateToHitChance(target);
 				// add defence bonus from last executed style if any
-				AttackData targetAD = target.TempProperties.GetProperty<AttackData>(GameLiving.LAST_ATTACK_DATA, null);
+				AttackData targetAD = target.attackComponent.attackAction.LastAttackData;
 				if (targetAD != null
 				    && targetAD.AttackResult == eAttackResult.HitStyle
 				    && targetAD.Style != null)
@@ -131,9 +130,6 @@ namespace DOL.GS.Spells
 					missrate += targetAD.Style.BonusToDefense;
 				}
 
-				// half of the damage is magical
-				// subtract any spelldamage bonus and re-calculate after half damage is calculated
-				m_handler.Effectiveness = 0.5 - caster.GetModified(eProperty.SpellDamage) * 0.01;
 				AttackData ad = m_handler.CalculateDamageToTarget(target);
 
 				// check for bladeturn miss
@@ -146,14 +142,14 @@ namespace DOL.GS.Spells
 				{
 					ad.AttackResult = eAttackResult.Missed;
 					m_handler.MessageToCaster("You miss!", eChatType.CT_YouHit);
-					m_handler.MessageToLiving(target, caster.GetName(0, false) + " missed!", eChatType.CT_Missed);
+					m_handler.MessageToLiving(target, caster.GetName(0, false) + " missed!", eChatType.CT_Action);
 					target.OnAttackedByEnemy(ad);
 					target.StartInterruptTimer(target.SpellInterruptDuration, ad.AttackType, caster);
 					if (target is GameNPC)
 					{
 						IOldAggressiveBrain aggroBrain = ((GameNPC)target).Brain as IOldAggressiveBrain;
 						if (aggroBrain != null)
-							aggroBrain.AddToAggroList(caster, 1);
+							aggroBrain.AddToAggroList(caster);
 					}
 					return 0;
 				}
@@ -162,10 +158,10 @@ namespace DOL.GS.Spells
 
 				bool arrowBlock = false;
 
-				if (target is GamePlayer && !target.IsStunned && !target.IsMezzed && !target.IsSitting && m_handler.Spell.LifeDrainReturn != (int)Archery.eShotType.Critical)
+				if (target is GamePlayer && !target.IsCrowdControlled && !target.IsSitting && m_handler.Spell.LifeDrainReturn != (int)Archery.eShotType.Critical)
 				{
 					GamePlayer player = (GamePlayer)target;
-					DbInventoryItem lefthand = player.Inventory.GetItem(eInventorySlot.LeftHandWeapon);
+					DbInventoryItem lefthand = player.ActiveLeftWeapon;
 					if (lefthand != null && (player.ActiveWeapon == null || player.ActiveWeapon.Item_Type == Slot.RIGHTHAND || player.ActiveWeapon.Item_Type == Slot.LEFTHAND))
 					{
 						if (target.IsObjectInFront(caster, 180) && lefthand.Object_Type == (int)eObjectType.Shield)
@@ -174,7 +170,6 @@ namespace DOL.GS.Spells
 							double shield = 0.5 * player.GetModifiedSpecLevel(Specs.Shields);
 							double blockchance = ((player.Dexterity * 2) - 100) / 40.0 + shield + (0 * 3) + 5;
 							blockchance += 30;
-							blockchance -= target.GetConLevel(caster) * 5;
 							if (blockchance >= 100) blockchance = 99;
 							if (blockchance <= 0) blockchance = 1;
 
@@ -198,7 +193,7 @@ namespace DOL.GS.Spells
 									{
 										engage.Owner.Endurance -= EngageAbilityHandler.ENGAGE_ENDURANCE_COST;
 										if (engage.Owner is GamePlayer)
-											(engage.Owner as GamePlayer).Out.SendMessage("You concentrate on blocking the blow!", eChatType.CT_Skill, eChatLoc.CL_SystemWindow);
+											(engage.Owner as GamePlayer).Out.SendMessage("You concentrate on blocking the blow!", eChatType.CT_Items, eChatLoc.CL_SystemWindow);
 
 										if (blockchance < 95)
 											blockchance = 95;
@@ -244,7 +239,7 @@ namespace DOL.GS.Spells
 					effectiveness += (caster.GetModified(eProperty.SpellDamage) * 0.01);
 					damage = damage * effectiveness;
 
-					damage *= (1.0 + RelicMgr.GetRelicBonusModifier(caster.Realm, eRelicType.Magic));
+					damage *= RelicMgr.GetRelicBonusModifier(caster, eRelicType.Magic);
 
 					if (damage < 0) damage = 0;
 
@@ -252,18 +247,14 @@ namespace DOL.GS.Spells
 
 					if (caster.ActiveWeapon != null)
 					{
-						// Quality
-						ad.Damage -= (int)(ad.Damage * (100 - caster.ActiveWeapon.Quality) * .01);
+						ad.Damage = (int) (ad.Damage * caster.ActiveWeapon.Quality * 0.01 * caster.ActiveWeapon.ConditionPercent * 0.01);
 
-						// Condition
-						ad.Damage = (int)((double)ad.Damage * Math.Min(1.0, (double)caster.ActiveWeapon.Condition / (double)caster.ActiveWeapon.MaxCondition));
+                        // Patch Note:  http://support.darkageofcamelot.com/kb/article.php?id=931
+                        // - The Damage Per Second (DPS) of your bow will have an effect on your damage for archery shots. If the effective DPS
+                        //   of your equipped bow is less than that of your max DPS for the level of archery shot you are using, the damage of your
+                        //   shot will be reduced. Max DPS for a particular level can be found by using this equation: (.3 * level) + 1.2
 
-						// Patch Note:  http://support.darkageofcamelot.com/kb/article.php?id=931
-						// - The Damage Per Second (DPS) of your bow will have an effect on your damage for archery shots. If the effective DPS
-						//   of your equipped bow is less than that of your max DPS for the level of archery shot you are using, the damage of your
-						//   shot will be reduced. Max DPS for a particular level can be found by using this equation: (.3 * level) + 1.2
-
-						int spellRequiredDPS = 12 + 3 * m_handler.Spell.Level;
+                        int spellRequiredDPS = 12 + 3 * m_handler.Spell.Level;
 
 						if (caster.ActiveWeapon.DPS_AF < spellRequiredDPS)
 						{
@@ -316,7 +307,7 @@ namespace DOL.GS.Spells
 				{
 					if (ad.AttackResult == eAttackResult.HitUnstyled || ad.AttackResult == eAttackResult.HitStyle)
 					{
-						caster.CheckWeaponMagicalEffect(ad, m_handler.Caster.ActiveWeapon);
+						caster.CheckWeaponMagicalEffect(ad);
 					}
 				}
 

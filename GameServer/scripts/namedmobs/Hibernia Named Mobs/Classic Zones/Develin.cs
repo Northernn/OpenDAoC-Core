@@ -7,7 +7,7 @@ namespace DOL.GS
 	{
 		public Develin() : base() { }
 
-		public static int KillsRequireToSpawn = 20;
+		public int KillsRequireToSpawn = 20;
 		public override bool AddToWorld()
 		{
 			foreach (GameNPC npc in GetNPCsInRadius(8000))
@@ -17,17 +17,9 @@ namespace DOL.GS
 			}
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60159930);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			KillsRequireToSpawn = Util.Random(20, 40);
 			//log.Warn("KillsRequireToSpawn = " + KillsRequireToSpawn);
 
-			DevelinAdd.DevelinAddCount = 0;
 			DevelinBrain sbrain = new DevelinBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = false;//load from database
@@ -41,7 +33,7 @@ namespace DOL.AI.Brain
 {
 	public class DevelinBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public DevelinBrain() : base()
 		{
 			AggroLevel = 100;
@@ -51,9 +43,10 @@ namespace DOL.AI.Brain
 		ushort oldModel;
 		GameNPC.eFlags oldFlags;
 		bool changed;
+		public int DevelinAddsKilled = 0;
 		public override void Think()
 		{
-			if (DevelinAdd.DevelinAddCount >= Develin.KillsRequireToSpawn && Body.CurrentRegion.IsNightTime)
+			if (Body is Develin develin && DevelinAddsKilled >= develin.KillsRequireToSpawn && Body.CurrentRegion.IsNightTime)
 			{
 				if (changed)
 				{
@@ -105,13 +98,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60164991);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			DevelinAddBrain sbrain = new DevelinAddBrain();
 			SetOwnBrain(sbrain);
@@ -120,12 +106,27 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-		public static int DevelinAddCount = 0;
-		public override void Die(GameObject killer)
+		private DevelinBrain _develinBrain;
+		public override void ProcessDeath(GameObject killer)
 		{
 			if (CurrentRegion.IsNightTime)
-				++DevelinAddCount;
-			base.Die(killer);
+			{
+				if (_develinBrain == null || _develinBrain.Body == null || _develinBrain.Body.Brain != _develinBrain || _develinBrain.Body.ObjectState is not eObjectState.Active)
+				{
+					_develinBrain = null;
+					foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(CurrentRegionID))
+					{
+						if (npc.Brain is DevelinBrain brain)
+						{
+							_develinBrain = brain;
+							break;
+						}
+					}
+				}
+				if (_develinBrain != null)
+					++_develinBrain.DevelinAddsKilled;
+			}
+			base.ProcessDeath(killer);
 		}
 	}
 }
@@ -133,7 +134,7 @@ namespace DOL.AI.Brain
 {
 	public class DevelinAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public DevelinAddBrain() : base()
 		{
 			AggroLevel = 80;

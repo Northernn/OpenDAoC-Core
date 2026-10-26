@@ -1,44 +1,21 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 using DOL.Database;
-using log4net;
 
 namespace DOL.GS.Movement
 {
-    /// <summary>
-    /// TODO: instead movement manager we need AI when npc should travel on path and attack 
-    /// enemies if they are near and after that return to pathing for example.
-    /// this current implementation is incomplete but usable for horses
-    /// </summary>
     public class MovementMgr
     {
         /// <summary>
         /// Defines a logger for this class.
         /// </summary>
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		private static Dictionary<string, DbPath> m_pathCache = new Dictionary<string, DbPath>();
 		private static Dictionary<string, SortedList<int, DbPathPoint>> m_pathpointCache = new Dictionary<string, SortedList<int, DbPathPoint>>();
-		private static object LockObject = new object();
+		private static readonly Lock _lock = new();
+
 		/// <summary>
 		/// Cache all the paths and pathpoints
 		/// </summary>
@@ -55,26 +32,24 @@ namespace DOL.GS.Movement
 			IList<DbPathPoint> allPathPoints = GameServer.Database.SelectAllObjects<DbPathPoint>();
 			foreach (DbPathPoint pathPoint in allPathPoints)
 			{
-				if (m_pathpointCache.ContainsKey(pathPoint.PathID))
+				if (m_pathpointCache.TryGetValue(pathPoint.PathId, out SortedList<int, DbPathPoint> pathPoints))
 				{
-					if (m_pathpointCache[pathPoint.PathID].ContainsKey(pathPoint.Step) == false)
-					{
-						m_pathpointCache[pathPoint.PathID].Add(pathPoint.Step, pathPoint);
-					}
-					else
-					{
+					if (!pathPoints.TryAdd(pathPoint.Step, pathPoint))
 						duplicateCount++;
-					}
 				}
 				else
 				{
-					SortedList<int, DbPathPoint> pList = new SortedList<int, DbPathPoint>();
-					pList.Add(pathPoint.Step, pathPoint);
-					m_pathpointCache.Add(pathPoint.PathID, pList);
+					SortedList<int, DbPathPoint> pList = new()
+					{
+						{ pathPoint.Step, pathPoint }
+					};
+					m_pathpointCache.Add(pathPoint.PathId, pList);
 				}
 			}
-            if (duplicateCount > 0)
-                log.ErrorFormat("{0} duplicate steps ignored while loading paths.", duplicateCount);
+
+			if (duplicateCount > 0)
+				log.ErrorFormat("{0} duplicate steps ignored while loading paths.", duplicateCount);
+
 			log.InfoFormat("Path cache filled with {0} paths.", m_pathCache.Count);
 		}
 
@@ -108,74 +83,52 @@ namespace DOL.GS.Movement
 
 			foreach (DbPathPoint pathPoint in pathPoints)
 			{
-				m_pathpointCache[pathPoint.PathID].Add(pathPoint.Step, pathPoint);
+				m_pathpointCache[pathPoint.PathId].Add(pathPoint.Step, pathPoint);
 			}
 		}
 
-        /// <summary>
-        /// loads a path from the cache
-        /// </summary>
-        /// <param name="pathID">path to load</param>
-        /// <returns>first pathpoint of path or null if not found</returns>
-        public static PathPoint LoadPath(string pathID)
-        {
-        	lock(LockObject)
-        	{
-	        	if (m_pathCache.Count == 0)
-				{
+		/// <summary>
+		/// loads a path from the cache
+		/// </summary>
+		/// <param name="pathID">path to load</param>
+		/// <returns>first pathpoint of path or null if not found</returns>
+		public static PathPoint LoadPath(string pathID)
+		{
+			lock(_lock)
+			{
+				if (m_pathCache.Count == 0)
 					FillPathCache();
-				}
-	
-				DbPath dbpath = null;
-	
-				if (m_pathCache.ContainsKey(pathID))
-				{
-					dbpath = m_pathCache[pathID];
-				}
-	
+
+				m_pathCache.TryGetValue(pathID, out DbPath dbpath);
+
 				// even if path entry not found see if pathpoints exist and try to use it
-	
-	            EPathType pathType = EPathType.Once;
-	
-	            if (dbpath != null)
-	            {
-	                pathType = (EPathType)dbpath.PathType;
-	            }
-	
-				SortedList<int, DbPathPoint> pathPoints = null;
-	
-				if (m_pathpointCache.ContainsKey(pathID))
-				{
-					pathPoints = m_pathpointCache[pathID];
-				}
-				else
-				{
-					pathPoints = new SortedList<int, DbPathPoint>();
-				}
-	
-	            PathPoint prev = null;
-	            PathPoint first = null;
-	
+
+				EPathType pathType = EPathType.Once;
+
+				if (dbpath != null)
+					pathType = (EPathType) dbpath.PathType;
+
+				if (!m_pathpointCache.TryGetValue(pathID, out SortedList<int, DbPathPoint> pathPoints))
+					pathPoints = [];
+
+				PathPoint prev = null;
+				PathPoint first = null;
+
 				foreach (DbPathPoint pp in pathPoints.Values)
 				{
-					PathPoint p = new PathPoint(pp.X, pp.Y, pp.Z, (short) pp.MaxSpeed, pathType);
-					p.WaitTime = pp.WaitTime;
-	
-					if (first == null)
-					{
-						first = p;
-					}
+					PathPoint p = new(pp.X, pp.Y, pp.Z, (short) pp.MaxSpeed, pathType, pp.WaitTime, pp.TriggerName);
+					first ??= p;
 					p.Prev = prev;
+
 					if (prev != null)
-					{
 						prev.Next = p;
-					}
+
 					prev = p;
 				}
 
-            	return first;
-        	}
-        }
+				return first;
+			}
+		}
 
         /// <summary>
         /// Saves the path into the database
@@ -211,16 +164,43 @@ namespace DOL.GS.Movement
             int i = 1;
             do
             {
-                DbPathPoint dbpp = new DbPathPoint(path.X, path.Y, path.Z, path.MaxSpeed);
+                DbPathPoint dbpp = new DbPathPoint(path.X, path.Y, path.Z, path.MaxSpeed, path.WaitTime, path.TriggerName);
                 dbpp.Step = i++;
-                dbpp.PathID = pathID;
-                dbpp.WaitTime = path.WaitTime;
+                dbpp.PathId = pathID;
                 GameServer.Database.AddObject(dbpp);
                 path = path.Next;
             }
 			while (path != null && path != root);
 
 			UpdatePathInCache(pathID);
+        }
+
+        /// <summary>
+        /// Builds a path from points defined in code, for scripted NPCs that don't use database paths.
+        /// Path points are mutable, so the chain shouldn't be shared between NPCs.
+        /// </summary>
+        /// <returns>The first pathpoint of the path</returns>
+        public static PathPoint CreatePath(EPathType type, short maxSpeed, params (int X, int Y, int Z)[] points)
+        {
+            PathPoint first = null;
+            PathPoint prev = null;
+
+            foreach ((int x, int y, int z) in points)
+            {
+                PathPoint point = new(x, y, z, maxSpeed, type)
+                {
+                    Prev = prev
+                };
+
+                first ??= point;
+
+                if (prev != null)
+                    prev.Next = point;
+
+                prev = point;
+            }
+
+            return first;
         }
 
         /// <summary>

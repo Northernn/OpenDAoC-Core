@@ -96,15 +96,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -116,15 +109,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(8821);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 
@@ -154,9 +139,6 @@ namespace DOL.GS
             if (!Styles.Contains(AfterParry))
                 Styles.Add(AfterParry);
 
-            ChieftainCaimheulBrain.Phase2 = false;
-            ChieftainCaimheulBrain.CanWalk = false;
-            ChieftainCaimheulBrain.IsPulled = false;
             VisibleActiveWeaponSlots = 16;
             MeleeDamageType = eDamageType.Slash;
             ChieftainCaimheulBrain sbrain = new ChieftainCaimheulBrain();
@@ -186,7 +168,6 @@ namespace DOL.GS
                 HOC.CurrentRegionID = 276; //marfach caverns
                 HOC.RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
                 HOC.Faction = FactionMgr.GetFactionByID(187);
-                HOC.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
                 HOC.X = 32597;
                 HOC.Y = 38903;
@@ -208,8 +189,7 @@ namespace DOL.AI.Brain
 {
     public class ChieftainCaimheulBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public ChieftainCaimheulBrain()
             : base()
@@ -218,9 +198,9 @@ namespace DOL.AI.Brain
             AggroRange = 500;
             ThinkInterval = 1500;
         }
-        public static bool Phase2 = false;
-        public static bool CanWalk = false;
-        public static bool IsPulled = false;
+        public bool Phase2 = false;
+        public bool CanWalk = false;
+        public bool IsPulled = false;
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -358,7 +338,6 @@ namespace DOL.AI.Brain
                     float angle = living.GetAngle(Body);
                     Point2D positionalPoint;
                     positionalPoint = living.GetPointFromHeading((ushort)(living.Heading + (90 * (4096.0 / 360.0))), 65);
-                    //Body.WalkTo(positionalPoint.X, positionalPoint.Y, living.Z, 280);
                     Body.X = positionalPoint.X;
                     Body.Y = positionalPoint.Y;
                     Body.Z = living.Z;

@@ -35,7 +35,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.ClientEffect = 2758;
             m_dbspell.Damage = 0;
 			m_dbspell.DamageType = (int)m_damageType;
-            m_dbspell.Target = "Enemy";
+            m_dbspell.Target = eSpellTarget.ENEMY.ToString();
             m_dbspell.Radius = 0;
 			m_dbspell.Type = eSpellType.SpeedDecrease.ToString();
             m_dbspell.Value = 99;
@@ -52,7 +52,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.Message1 = "You are grappled and cannot move.";
             m_dbspell.Message2 = "{0}'s is grappled and cannot move!";
 			m_spell = new Spell(m_dbspell, caster.Level);
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
 
         public override void Execute(GameLiving living)

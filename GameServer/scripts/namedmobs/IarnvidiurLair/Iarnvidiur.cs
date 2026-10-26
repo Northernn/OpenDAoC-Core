@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -45,15 +44,8 @@ namespace DOL.GS
 		{
 			base.OnAttackEnemy(ad);
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -65,17 +57,9 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(83028);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(159);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(159));
 
 			IarnvidiurBrain sbrain = new IarnvidiurBrain();
 			SetOwnBrain(sbrain);
@@ -90,17 +74,17 @@ namespace DOL.AI.Brain
 {
 	public class IarnvidiurBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public IarnvidiurBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsTargetTeleported = false;
+		public bool IsTargetTeleported = false;
 		#region Pick player to port
-		public static GamePlayer teleporttarget = null;
-		public static GamePlayer TeleportTarget
+		public GamePlayer teleporttarget = null;
+		public GamePlayer TeleportTarget
 		{
 			get { return teleporttarget; }
 			set { teleporttarget = value; }
@@ -170,9 +154,9 @@ namespace DOL.AI.Brain
         }
 		#endregion
 		#region DD or Dot random player
-		public static bool IsTargetPicked = false;
-		public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+		public bool IsTargetPicked = false;
+		public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -181,13 +165,13 @@ namespace DOL.AI.Brain
 		{
 			if (Body.IsAlive && HasAggro)
 			{
-				List<GameLiving> enemies = AggroList.Keys.ToList();
+				List<GameLiving> enemies = GetUnorderedAggroList();
 				foreach (GamePlayer player in Body.GetPlayersInRadius(2500))
 				{
 					if (player != null)
 					{
 						if (player.IsAlive && player.Client.Account.PrivLevel == 1)
-							AggroList.TryAdd(player, new());
+							AddToAggroList(player);
 					}
 				}
 
@@ -319,11 +303,10 @@ namespace DOL.AI.Brain
 					spell.Range = 1500;
 					spell.Radius = 700;
 					spell.SpellID = 11828;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DamageOverTime.ToString();
 					spell.Uninterruptible = true;
 					m_Iarnvidiur_Dot = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Iarnvidiur_Dot);
 				}
 				return m_Iarnvidiur_Dot;
 			}
@@ -351,13 +334,12 @@ namespace DOL.AI.Brain
 					spell.Range = 0;
 					spell.Duration = 600;
 					spell.SpellID = 11829;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "Disease";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Energy; //Energy DMG Type
 					m_IarnvidiurDisease = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_IarnvidiurDisease);
 				}
 				return m_IarnvidiurDisease;
 			}
@@ -387,7 +369,6 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Cold;
 					m_Iarnvidiur_Bolt = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Iarnvidiur_Bolt);
 				}
 
 				return m_Iarnvidiur_Bolt;
@@ -411,13 +392,12 @@ namespace DOL.AI.Brain
 					spell.Damage = 400;
 					spell.Range = 1500;
 					spell.SpellID = 11831;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Spirit;
 					m_IarnvidiurDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_IarnvidiurDD);
 				}
 				return m_IarnvidiurDD;
 			}

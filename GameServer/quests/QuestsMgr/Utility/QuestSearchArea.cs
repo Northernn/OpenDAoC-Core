@@ -20,13 +20,12 @@
 using System;
 using System.Reflection;
 using DOL.GS.PacketHandler;
-using log4net;
 
 namespace DOL.GS.Quests
 {
 	public class QuestSearchArea : Area.Circle
 	{
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		public const int DEFAULT_SEARCH_SECONDS = 5;
 		public const int DEFAULT_SEARCH_RADIUS = 150;
@@ -36,7 +35,7 @@ namespace DOL.GS.Quests
         DataQuest m_dataQuest = null;
 		int m_validStep;
 		int m_searchSeconds;
-		string m_popupText = "";
+		string m_popupText = string.Empty;
 
 		/// <summary>
 		/// Create an area used for /search.  Area will only be active when player is doing associated quest
@@ -149,16 +148,8 @@ namespace DOL.GS.Quests
                 ChatUtil.SendDebugMessage(player, "Entered QuestSearchArea for DataQuest ID:" + m_dataQuest.ID + ", Step " + Step);
 
                 // first check active data quests
-   			    foreach (AbstractQuest quest in player.QuestList.Keys)
-			    {
-				    if (quest is DataQuest)
-				    {
-                        if ((quest as DataQuest).ID == m_dataQuest.ID && quest.Step == Step && m_popupText != string.Empty)
-                        {
-                            showText = true;
-                        }
-				    }
-			    }
+                if (player.IsDoingDataQuest(m_dataQuest.ID, Step) && m_popupText != string.Empty)
+                    showText = true;
 
                 // next check for searches that start a dataquest
                 if (Step == 0 && DataQuest.CheckQuestQualification(player))
@@ -171,7 +162,9 @@ namespace DOL.GS.Quests
                 ChatUtil.SendDebugMessage(player, "Entered QuestSearchArea for " + m_questType.Name + ", Step " + Step);
 
                 // popup a dialog telling the player they should search here
-                if (player.IsDoingQuest(m_questType) != null && player.IsDoingQuest(m_questType).Step == m_validStep && PopupText != string.Empty)
+                AbstractQuest quest = player.IsDoingQuest(m_questType);
+
+                if (quest != null && quest.Step == m_validStep && PopupText != string.Empty)
                 {
                     showText = true;
                 }

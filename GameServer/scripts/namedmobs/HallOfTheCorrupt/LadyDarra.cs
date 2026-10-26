@@ -99,15 +99,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -119,15 +112,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(7720);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 
@@ -146,7 +131,6 @@ namespace DOL.GS
                 Styles.Add(taunt);
             if(!Styles.Contains(after_block))
                 Styles.Add(after_block);
-            LadyDarraBrain.reset_darra = false;
             spawn_palas = false;
             
             VisibleActiveWeaponSlots = 16;
@@ -183,7 +167,6 @@ namespace DOL.GS
                 HOC.MeleeDamageType = eDamageType.Slash;
                 HOC.RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
                 HOC.Faction = FactionMgr.GetFactionByID(187);
-                HOC.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
                 HOC.X = 29551;
                 HOC.Y = 31554;
@@ -198,10 +181,20 @@ namespace DOL.GS
             else
                 log.Warn("Lady Darra exist ingame, remove it and restart server if you want to add by script code.");
         }
-        public static bool spawn_palas = false;
+        public bool spawn_palas = false;
+        public static int CountPaladins()
+        {
+            int count = 0;
+            foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(277))
+            {
+                if (npc != null && npc.IsAlive && npc.Brain is SpectralPaladinBrain)
+                    ++count;
+            }
+            return count;
+        }
         public void SpawnPaladins()
         {
-            if (SpectralPaladin.paladins_count == 0 && spawn_palas==false)
+            if (CountPaladins() == 0 && spawn_palas==false)
             {
                 SpectralPaladin Add1 = new SpectralPaladin();
                 Add1.X = 30000;
@@ -247,8 +240,7 @@ namespace DOL.AI.Brain
 {
     public class LadyDarraBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public LadyDarraBrain()
             : base()
         {
@@ -256,7 +248,7 @@ namespace DOL.AI.Brain
             AggroRange = 500;
             ThinkInterval = 1500;
         }
-        public static bool reset_darra = false;
+        public bool reset_darra = false;
         public override void Think()
         {
             if (!CheckProximityAggro())
@@ -274,9 +266,9 @@ namespace DOL.AI.Brain
                 Body.Health = Body.MaxHealth;
                 if (reset_darra == false)
                 {
-                    if (SpectralPaladin.paladins_count <= 3)
+                    if (Body is LadyDarra darra && LadyDarra.CountPaladins() <= 3)
                     {
-                        LadyDarra.spawn_palas = false;
+                        darra.spawn_palas = false;
                         foreach (GameNPC pala in Body.GetNPCsInRadius(2000))
                         {
                             if (pala != null)
@@ -287,7 +279,6 @@ namespace DOL.AI.Brain
                                 }
                             }
                         }
-                        LadyDarra darra = new LadyDarra();
                         darra.SpawnPaladins();
                         new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(ResetDarra), 7000);
                         reset_darra = true;
@@ -324,15 +315,8 @@ namespace DOL.GS
                 default: return 25; // dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 60;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 300;
@@ -345,12 +329,6 @@ namespace DOL.GS
         public override int MaxHealth
         {
             get { return 5000; }
-        }
-        public static int paladins_count = 0;
-        public override void Die(GameObject killer)
-        {
-            --paladins_count;
-            base.Die(killer);
         }
         public override bool AddToWorld()
         {
@@ -371,10 +349,8 @@ namespace DOL.GS
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.Standard);
             VisibleActiveWeaponSlots = 16;
-            ++paladins_count;
 
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             SpectralPaladinBrain adds = new SpectralPaladinBrain();
             SetOwnBrain(adds);
             LoadedFromScript = false;
@@ -388,8 +364,7 @@ namespace DOL.AI.Brain
 {
     public class SpectralPaladinBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public SpectralPaladinBrain()
             : base()
@@ -446,7 +421,6 @@ namespace DOL.AI.Brain
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_Paladin_Heal = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Paladin_Heal);
                 }
 
                 return m_Paladin_Heal;

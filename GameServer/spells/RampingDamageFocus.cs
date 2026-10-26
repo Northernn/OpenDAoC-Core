@@ -1,23 +1,4 @@
-﻿/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using DOL.Database;
 using DOL.GS.Effects;
@@ -26,10 +7,9 @@ using DOL.Language;
 
 namespace DOL.GS.Spells
 {
-	[SpellHandler("RampingDamageFocus")]
+	[SpellHandler(eSpellType.RampingDamageFocus)]
 	public class RampingDamageFocus : SpellHandler
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		private int pulseCount = 0;
 		private ISpellHandler snareSubSpell;
 
@@ -46,22 +26,11 @@ namespace DOL.GS.Spells
 			OnDirectEffect(target);
 		}
 
-		public override bool StartSpell(GameLiving target)
-		{
-			if (Target == null)
-				Target = target;
-
-			if (Target == null) return false;
-
-			ApplyEffectOnTarget(target);
-			return true;
-		}
-
 		public override void OnSpellPulse(PulsingSpellEffect effect)
 		{
 			if (Caster.ObjectState != GameObject.eObjectState.Active)
 				return;
-			if (Caster.IsStunned || Caster.IsMezzed)
+			if (Caster.IsCrowdControlled)
 				return;
 
 			//(Caster as GamePlayer).Out.SendCheckLOS(Caster, m_spellTarget, CheckLOSPlayerToTarget);
@@ -76,17 +45,17 @@ namespace DOL.GS.Spells
 			else
 			{
 				MessageToCaster("You do not have enough power and your spell was canceled.", eChatType.CT_SpellExpires);
-				FocusSpellAction(/*null, Caster, null*/);
+				CancelFocusSpells();
 				effect.Cancel(false);
 			}
 		}
 
 		protected override GameSpellEffect CreateSpellEffect(GameLiving target, double effectiveness)
 		{
-			return new GameSpellEffect(this, CalculateEffectDuration(target, effectiveness), 0, effectiveness);
+			return new GameSpellEffect(this, CalculateEffectDuration(target), 0, effectiveness);
 		}
 
-		public override bool CasterIsAttacked(GameLiving attacker)
+		protected override bool TryInterruptCaster(GameLiving attacker)
 		{
 			if (Spell.Uninterruptible && Caster.GetDistanceTo(attacker) > 200)
 				return false;
@@ -95,12 +64,12 @@ namespace DOL.GS.Spells
                 || Caster.effectListComponent.ContainsEffectForEffectType(eEffect.FacilitatePainworking)
                 || Caster.effectListComponent.ContainsEffectForEffectType(eEffect.QuickCast))
                 return false;
-           
-			if (IsInCastingPhase && Stage < 2)
+
+			if (IsInCastingPhase)
 			{
 				Caster.LastInterruptMessage = attacker.GetName(0, true) + " attacks you and your spell is interrupted!";
 				MessageToLiving(Caster, Caster.LastInterruptMessage, eChatType.CT_SpellResisted);
-				InterruptCasting(); // always interrupt at the moment
+				InterruptCasting(false); // always interrupt at the moment
 				return true;
 			}
 			return false;
@@ -116,7 +85,7 @@ namespace DOL.GS.Spells
 			{
 				if (Util.Chance(CalculateSpellResistChance(t)))
 				{
-					OnSpellResisted(t);
+					OnSpellNegated(target, SpellNegatedReason.Resisted);
 					continue;
 				}
 				
@@ -184,7 +153,7 @@ namespace DOL.GS.Spells
 			dbSpell.Icon = Spell.Icon;
 			dbSpell.Type = eSpellType.SpeedDecrease.ToString();
 			dbSpell.Duration = (Spell.Radius == 0) ? 10 : 3;
-			dbSpell.Target = "Enemy";
+			dbSpell.Target = eSpellTarget.ENEMY.ToString();
 			dbSpell.Range = 1500;
 			dbSpell.Value = Spell.Value;
 			dbSpell.Name = Spell.Name + " Snare";
@@ -197,7 +166,7 @@ namespace DOL.GS.Spells
 
 	public class SnareWithoutImmunity : SpeedDecreaseSpellHandler
 	{
-		public override int CalculateSpellResistChance(GameLiving target)
+		public override double CalculateSpellResistChance(GameLiving target)
 		{
 			return 0;
 		}

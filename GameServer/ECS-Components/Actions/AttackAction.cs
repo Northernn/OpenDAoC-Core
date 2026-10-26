@@ -2,78 +2,86 @@
 using System.Linq;
 using DOL.Database;
 using DOL.GS.Styles;
-using static DOL.GS.GameLiving;
-using static DOL.GS.GameObject;
 
 namespace DOL.GS
 {
-    public abstract class AttackAction
+    public class AttackAction
     {
         // Next tick interval for when the current tick doesn't result in an attack.
         protected const int TICK_INTERVAL_FOR_NON_ATTACK = 100;
         private const int MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK = 750;
 
-        protected AttackData _lastAttackData;
         protected DbInventoryItem _weapon;
         protected DbInventoryItem _leftWeapon;
         protected Style _combatStyle;
-        protected GameObject _target;
+        protected GameLiving _target;
         protected double _effectiveness;
         protected int _ticksToTarget;
-        protected int _interruptDuration;
+        protected int _attackInterval;
         protected int _interval;
-        private GameLiving _owner;
+        private readonly GameLiving _owner;
         private long _nextMeleeTick;
         private long _nextRangedTick;
+        private bool _firstTick = true;
+        private byte _styleChainStage; // Used to track the current stage of a style chain (0 = first style).
+        private bool _halfwayDrawChecked;
 
-        // Set to current time when a round doesn't result in an attack. Used to prevent combat log spam and kept until reset in AttackComponent.SendAttackingCombatMessages().
-        public long RoundWithNoAttackTime { get; set; }
-        public long NextTick => _owner.ActiveWeaponSlot != eActiveWeaponSlot.Distance ? _nextMeleeTick : _nextRangedTick;
+        public long RoundWithNoAttackTime { get; set; } // Used to prevent combat log spam and kept until reset by AttackComponent.SendAttackingCombatMessages.
+
+        public AttackData LastAttackData { get; set; }
         protected AttackComponent AttackComponent => _owner.attackComponent;
         protected StyleComponent StyleComponent => _owner.styleComponent;
 
         protected AttackAction(GameLiving owner)
         {
             _owner = owner;
-            _nextMeleeTick = GameLoop.GameLoopTime;
-            _nextRangedTick = GameLoop.GameLoopTime;
         }
 
-        public static AttackAction Create(GameLiving gameLiving)
+        public static AttackAction Create(GameLiving living)
         {
-            if (gameLiving is GameNPC gameNpc)
-                return new NpcAttackAction(gameNpc);
-            else if (gameLiving is GamePlayer gamePlayer)
-                return new PlayerAttackAction(gamePlayer);
-
-            return null;
+            if (living is GameNPC npc)
+                return new NpcAttackAction(npc);
+            else if (living is GamePlayer player)
+                return new PlayerAttackAction(player);
+            else
+                return new AttackAction(living);
         }
 
-        public void Tick()
+        public bool Tick()
         {
-            if (!ShouldTick())
-                return;
-
-            if (!CanPerformAction())
+            if (_firstTick)
             {
-                _interval = TICK_INTERVAL_FOR_NON_ATTACK;
-                return;
+                _nextMeleeTick = Math.Max(_nextMeleeTick, GameLoop.GameLoopTime);
+                _nextRangedTick = Math.Max(_nextRangedTick, GameLoop.GameLoopTime);
+                _firstTick = false;
             }
 
-            _lastAttackData = _owner.TempProperties.GetProperty<AttackData>(LAST_ATTACK_DATA, null);
-            _weapon = _owner.ActiveWeapon;
-            _leftWeapon = _owner.Inventory?.GetItem(eInventorySlot.LeftHandWeapon);
-            _effectiveness = _owner.Effectiveness;
+            OnEveryTick();
 
-            if (_owner.ActiveWeaponSlot != eActiveWeaponSlot.Distance)
+            if (!ShouldTick())
+                return true;
+
+            // This must be checked after `ShouldTick` so that the last attack data remains valid for the whole attack interval.
+            if (!AttackComponent.AttackState)
+                return false;
+
+            _weapon = _owner.ActiveWeapon;
+            _leftWeapon = _owner.ActiveLeftWeapon;
+            _effectiveness = 1.0; // Don't use `_owner.Effectiveness` here, it's already applied on weaponskill.
+
+            if (_owner.ActiveWeaponSlot is not eActiveWeaponSlot.Distance)
                 TickMeleeAttack();
             else
                 TickRangedAttack();
+
+            return true;
         }
+
+        protected virtual void OnEveryTick() { }
 
         private void TickMeleeAttack()
         {
-            _target = _owner.TargetObject;
+            _target = _owner.TargetObject as GameLiving;
 
             if (PrepareMeleeAttack())
             {
@@ -87,88 +95,111 @@ namespace DOL.GS
 
         private void TickRangedAttack()
         {
-            _target = _owner.rangeAttackComponent.AutoFireTarget ?? _owner.TargetObject;
+            _target = _owner.rangeAttackComponent.AutoFireTarget ?? _owner.TargetObject as GameLiving;
 
             if (PrepareRangedAttack())
             {
                 PerformRangedAttack();
-                FinalizeRangedAttack();
+
+                if (FinalizeRangedAttack())
+                {
+                    // Immediately prepare the next attack if we can.
+                    // NpcAttackAction can change AutoFireTarget, so the target must be reevaluated.
+                    _target = _owner.rangeAttackComponent.AutoFireTarget ?? _owner.TargetObject as GameLiving;
+                    PrepareRangedAttack();
+                }
             }
 
             if (AttackComponent.AttackState)
                 _nextRangedTick += _interval;
         }
 
-        public void OnRangedAttackStop()
+        public void OnStopAttack()
         {
-            if (GameLoop.GameLoopTime - _nextMeleeTick > MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK)
-                _nextMeleeTick = GameLoop.GameLoopTime + MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK;
+            // This method serves three purposes:
+            // * Ensure we're not buffering (NPCs) or delaying (players) ranged attacks. For this, we need to update `_nextRangedTick` so that it's never higher than `GameLoop.GameLoopTime`.
+            // * Delay the next melee attack a little after aborting a ranged attack, or getting interrupted.
+            // * Clean up ranged attack type and state.
 
             _nextRangedTick = GameLoop.GameLoopTime;
+
+            if (_owner.ActiveWeaponSlot is not eActiveWeaponSlot.Distance)
+                return;
+
+            RangeAttackComponent rangeAttackComponent = _owner.rangeAttackComponent;
+
+            if (rangeAttackComponent.RangedAttackState is not eRangedAttackState.None)
+            {
+                long _nextDelayedMeleeTick = GameLoop.GameLoopTime + MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK;
+                _nextMeleeTick = Math.Max(_nextMeleeTick, _nextDelayedMeleeTick);
+            }
+            else
+                _nextMeleeTick = Math.Max(_nextMeleeTick, GameLoop.GameLoopTime);
+
+            rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
+            rangeAttackComponent.RangedAttackState = eRangedAttackState.None;
+            _halfwayDrawChecked = false;
         }
 
-        public void OnWeaponSwitch()
+        public void OnHeadingUpdate()
         {
-            _nextRangedTick = GameLoop.GameLoopTime;
-        }
+            if (!AttackComponent.AttackState || _owner.ActiveWeaponSlot is eActiveWeaponSlot.Distance)
+                return;
 
-        public void OnEnterMeleeRange()
-        {
-            _nextMeleeTick = GameLoop.GameLoopTime;
-        }
+            AttackData ad = LastAttackData;
 
-        public virtual bool CheckInterruptTimer()
-        {
-            return false;
-        }
+            if (ad == null || !ad.IsMeleeAttack || (ad.AttackResult is not eAttackResult.TargetNotVisible and not eAttackResult.OutOfRange))
+                return;
 
-        public virtual void OnAimInterrupt(GameObject attacker) { }
+            if (ad.Target != null && _owner.IsObjectInFront(ad.Target, 120) && _owner.IsWithinRadius(ad.Target, AttackComponent.AttackRange))
+                _firstTick = true;
+        }
 
         private bool ShouldTick()
         {
-            if (!AttackComponent.AttackState || _owner.ObjectState != eObjectState.Active)
+            if (!IsTickDue())
+                return false;
+
+            if (!IsAllowedToTick())
             {
-                CleanUp();
+                _firstTick = true; // Important to not buffer attacks.
                 return false;
             }
 
-            return _owner.ActiveWeaponSlot != eActiveWeaponSlot.Distance
-                ? ServiceUtils.ShouldTickAdjust(ref _nextMeleeTick)
-                : ServiceUtils.ShouldTickAdjust(ref _nextRangedTick);
+            return true;
         }
 
-        protected virtual bool CanPerformAction()
+        private bool IsTickDue()
         {
-            if (_owner.IsMezzed || _owner.IsStunned || _owner.IsEngaging)
-                return false;
+            return _owner.ActiveWeaponSlot is not eActiveWeaponSlot.Distance ? GameServiceUtils.ShouldTick(_nextMeleeTick) : GameServiceUtils.ShouldTick(_nextRangedTick);
+        }
 
-            if (_owner.CurrentSpellHandler?.Spell.Uninterruptible == false)
-                return false;
-
-            return true;
+        private bool IsAllowedToTick()
+        {
+            // 1.82 changed the reactionary window to a fixed 3 seconds. This made placing reactionary styles easier against fast attacks,
+            // but it's also suspected that this is when it became impossible to spam them when the target is stunned.
+            return !_owner.IsCrowdControlled && !_owner.IsEngaging && (_owner.CurrentSpellHandler?.Spell.Uninterruptible) != false;
         }
 
         protected virtual bool PrepareMeleeAttack()
         {
             bool clearOldStyles = false;
 
-            if (_lastAttackData != null)
+            if (LastAttackData != null)
             {
-                switch (_lastAttackData.AttackResult)
+                switch (LastAttackData.AttackResult)
                 {
-                    case eAttackResult.Fumbled:
-                    {
-                        // Skip this attack if the last one fumbled.
-                        StyleComponent.NextCombatStyle = null;
-                        StyleComponent.NextCombatBackupStyle = null;
-                        _lastAttackData.AttackResult = eAttackResult.Missed;
-                        _interval = AttackComponent.AttackSpeed(_weapon) * 2;
-                        return false;
-                    }
                     case eAttackResult.OutOfRange:
                     case eAttackResult.TargetNotVisible:
+                    {
+                        // We allow styles to stay registered for about 250 milliseconds on out of range / not visible attack result.
+                        // Live doesn't seem to be very consistent in that regard, but neither are we because of `TICK_INTERVAL_FOR_NON_ATTACK`.
+                        clearOldStyles = GameServiceUtils.ShouldTick(StyleComponent.NextCombatStyleTime + 250);
+                        break;
+                    }
                     case eAttackResult.NotAllowed_ServerRules:
                     case eAttackResult.TargetDead:
+                    case eAttackResult.NoValidTarget:
                     {
                         clearOldStyles = true;
                         break;
@@ -176,18 +207,13 @@ namespace DOL.GS
                 }
             }
 
-            if (_combatStyle != null && _combatStyle.WeaponTypeRequirement == (int) eObjectType.Shield)
-                _weapon = _leftWeapon;
-
-            int mainHandAttackSpeed = AttackComponent.AttackSpeed(_weapon);
-
-            if (clearOldStyles || StyleComponent.NextCombatStyleTime + mainHandAttackSpeed < GameLoop.GameLoopTime)
+            if (clearOldStyles)
             {
                 // Cancel the styles if they were registered too long ago.
                 // Nature's Shield stays active forever and falls back to a non-backup style.
-                if (StyleComponent.NextCombatBackupStyle?.ID == 394)
+                if (StyleComponent.NextCombatBackupStyle?.Procs.FirstOrDefault(x => x.Spell.SpellType is eSpellType.NaturesShield) != null)
                     StyleComponent.NextCombatStyle = StyleComponent.NextCombatBackupStyle;
-                else if (StyleComponent.NextCombatStyle?.ID != 394)
+                else if (StyleComponent.NextCombatStyle?.Procs.FirstOrDefault(x => x.Spell.SpellType is eSpellType.NaturesShield) == null)
                     StyleComponent.NextCombatStyle = null;
 
                 StyleComponent.NextCombatBackupStyle = null;
@@ -204,50 +230,71 @@ namespace DOL.GS
             if (_target is GamePlayer playerTarget && playerTarget.IsSitting)
                 _effectiveness *= 2;
 
-            _interruptDuration = mainHandAttackSpeed;
+            _attackInterval = AttackComponent.AttackSpeed(_weapon, _leftWeapon);
             return true;
         }
 
         protected virtual bool PrepareRangedAttack()
         {
-            int attackSpeed = _owner.attackComponent.AttackSpeed(_weapon);
+            int attackSpeed;
 
-            if (_owner.rangeAttackComponent.RangedAttackState == eRangedAttackState.None)
+            if (_owner.rangeAttackComponent.RangedAttackState is eRangedAttackState.None)
             {
                 _owner.rangeAttackComponent.RangedAttackState = eRangedAttackState.Aim;
+                _owner.rangeAttackComponent.AttackStartTime = GameLoop.GameLoopTime;
+                _halfwayDrawChecked = false;
+
+                if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.SureShot))
+                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.SureShot;
+                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.RapidFire))
+                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.RapidFire;
+                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.TrueShot))
+                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Long;
+
+                // Must be done after changing RangedAttackType to account for RapidFire.
+                attackSpeed = AttackComponent.AttackSpeed(_weapon);
 
                 if (_owner is not GamePlayer || !_owner.effectListComponent.ContainsEffectForEffectType(eEffect.Volley))
                 {
                     // The 'stance' parameter appears to be used to tell whether or not the animation should be held, and doesn't seem to be related to the weapon speed.
                     foreach (GamePlayer player in _owner.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
                         player.Out.SendCombatAnimation(_owner, null, (ushort) (_weapon != null ? _weapon.Model : 0), 0, player.Out.BowPrepare, 0x1A, 0x00, 0x00);
-
-                    _interval = _owner.rangeAttackComponent?.RangedAttackType == eRangedAttackType.RapidFire ? Math.Max(1500, attackSpeed / 2) : attackSpeed;
                 }
 
+                _interval = attackSpeed / 2;
+                return false;
+            }
+
+            attackSpeed = _owner.attackComponent.AttackSpeed(_weapon);
+
+            if (!_halfwayDrawChecked)
+            {
+                if (PerformDuringDrawInterruptCheck())
+                    return false;
+
+                _interval = attackSpeed - attackSpeed / 2;
                 return false;
             }
 
             eCheckRangeAttackStateResult rangeCheckResult = _owner.rangeAttackComponent.CheckRangeAttackState(_target);
 
-            if (rangeCheckResult == eCheckRangeAttackStateResult.Hold)
+            if (rangeCheckResult is eCheckRangeAttackStateResult.Hold)
             {
                 _interval = TICK_INTERVAL_FOR_NON_ATTACK;
                 return false;
             }
-            else if (rangeCheckResult == eCheckRangeAttackStateResult.Stop || _target == null)
+            else if (rangeCheckResult is eCheckRangeAttackStateResult.Stop || _target == null)
             {
                 AttackComponent.StopAttack();
-                AttackComponent.attackAction.CleanUp();
                 return false;
             }
 
             _interval = attackSpeed;
-            _interruptDuration = _interval;
+            _attackInterval = _interval;
             _ticksToTarget = _owner.GetDistanceTo(_target) * 1000 / RangeAttackComponent.PROJECTILE_FLIGHT_SPEED;
             int model = _weapon == null ? 0 : _weapon.Model;
-            byte flightDuration = (byte)(_ticksToTarget > 350 ? 1 + (_ticksToTarget - 350) / 75 : 1);
-            bool cancelPrepareAnimation = _owner.ActiveWeapon.Object_Type == (int)eObjectType.Thrown;
+            byte flightDuration = (byte) (_ticksToTarget > 350 ? 1 + (_ticksToTarget - 350) / 75 : 1);
+            bool cancelPrepareAnimation = (eObjectType) _weapon.Object_Type is eObjectType.Thrown;
 
             foreach (GamePlayer player in _owner.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
@@ -267,15 +314,9 @@ namespace DOL.GS
             {
                 case eRangedAttackType.Critical:
                 {
-                    double tmpEffectiveness = 2 - 0.3 * _owner.GetConLevel(_target);
-
-                    if (tmpEffectiveness > 2)
-                        _effectiveness *= 2;
-                    else if (tmpEffectiveness < 1.1)
-                        _effectiveness *= 1.1;
-                    else
-                        _effectiveness *= tmpEffectiveness;
-
+                    // Reduced effectiveness against higher level targets.
+                    double levelModifier = 2 + (_owner.EffectiveLevel - _target.EffectiveLevel) * 0.075;
+                    _effectiveness *= Math.Clamp(levelModifier, 1.1, 2.0);
                     break;
                 }
 
@@ -297,30 +338,20 @@ namespace DOL.GS
                     // stat bonuses, I fire that bow at 3.0 seconds. The resulting interrupt on the caster will last 3.0 seconds. If I rapid fire that same bow, I will fire at 1.5 seconds,
                     // and the resulting interrupt will last 1.5 seconds."
 
-                    long rapidFireMaxDuration = AttackComponent.AttackSpeed(_weapon);
-                    long elapsedTime = GameLoop.GameLoopTime - _owner.rangeAttackComponent.AttackStartTime;
+                    // We need the attack speed unmodified by Rapid Fire to calculate the damage effectiveness, so we temporarily change the attack type to normal.
+                    // This is dirty, but I believe this is the simplest solution.
+                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
+                    double preRapidFireAttackSpeed = AttackComponent.AttackSpeed(_weapon);
+                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.RapidFire;
+                    long elapsedTime = _nextRangedTick - _owner.rangeAttackComponent.AttackStartTime; // Using _nextRangedTick as reference is correct here.
 
-                    if (elapsedTime < rapidFireMaxDuration)
+                    if (elapsedTime < preRapidFireAttackSpeed)
                     {
-                        _effectiveness *= 0.25 + elapsedTime * 0.5 / rapidFireMaxDuration;
-                        _interruptDuration = (int)(_interruptDuration * _effectiveness);
+                        _effectiveness *= elapsedTime / preRapidFireAttackSpeed;
+                        _attackInterval = (int) (preRapidFireAttackSpeed * _effectiveness);
                     }
 
                     break;
-                }
-            }
-
-            // Calculate Penetrating Arrow damage reduction.
-            if (_target is GameLiving livingTarget)
-            {
-                int PALevel = _owner.GetAbilityLevel(Abilities.PenetratingArrow);
-
-                if ((PALevel > 0) && (_owner.rangeAttackComponent.RangedAttackType != eRangedAttackType.Long))
-                {
-                    ECSGameSpellEffect bladeturn = livingTarget.effectListComponent.GetSpellEffects(eEffect.Bladeturn)?.FirstOrDefault();
-
-                    if (bladeturn != null && _target != bladeturn.SpellHandler.Caster)
-                        _effectiveness *= 0.25 + PALevel * 0.25;
                 }
             }
 
@@ -329,94 +360,138 @@ namespace DOL.GS
 
         protected virtual void PerformMeleeAttack()
         {
-            AttackComponent.weaponAction = new WeaponAction(_owner, _target, _weapon, _leftWeapon, _effectiveness, _interruptDuration, _combatStyle);
+            AttackData lastAttackData = LastAttackData;
+
+            // If we've succesfully used a style during the previous attack, check if the next style is a follow-up.
+            // Reset or increment StyleChainStage based on the result.
+            if (LastAttackData != null &&
+                LastAttackData.AttackResult is eAttackResult.HitStyle &&
+                _combatStyle != null &&
+               _combatStyle.OpeningRequirementType is Style.eOpening.Offensive)
+            {
+                Style lastStyle = lastAttackData.Style;
+
+                if (lastStyle != null && lastStyle.ID == _combatStyle.OpeningRequirementValue)
+                    _styleChainStage++;
+            }
+            else
+                _styleChainStage = 0;
+
+            // AttackAction ticks in a way that prevent drifting,
+            // but we must pass the real interval to WeaponAction to ensure correct interrupt / block round durations.
+            AttackComponent.weaponAction = new(
+                _owner,
+                _target,
+                _weapon,
+                _leftWeapon,
+                _effectiveness,
+                (int) (_nextMeleeTick - GameLoop.GameLoopTime + _attackInterval),
+                _combatStyle,
+                _styleChainStage);
             AttackComponent.weaponAction.Execute();
-            _lastAttackData = _owner.TempProperties.GetProperty<AttackData>(LAST_ATTACK_DATA, null);
         }
 
         protected virtual void PerformRangedAttack()
         {
-            AttackComponent.weaponAction = new WeaponAction(_owner, _target, _weapon, _effectiveness, _interruptDuration, _owner.rangeAttackComponent.RangedAttackType);
+            // AttackAction ticks in a way that prevent drifting,
+            // but we must pass the real interval to WeaponAction to ensure correct interrupt / block round durations.
+            AttackComponent.weaponAction = new(
+                _owner,
+                _target,
+                _weapon,
+                _effectiveness,
+                (int) (_nextRangedTick - GameLoop.GameLoopTime + _attackInterval),
+                _owner.rangeAttackComponent.RangedAttackType,
+                _owner.rangeAttackComponent.Ammo);
 
-            if (_owner.rangeAttackComponent.RangedAttackType == eRangedAttackType.Critical)
-                _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
+            if (_owner.rangeAttackComponent.RangedAttackType is eRangedAttackType.Long)
+                (EffectListService.GetEffectOnTarget(_owner, eEffect.TrueShot) as TrueShotECSGameEffect)?.Cancel(true);
+
+            _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
 
             // A positive ticksToTarget means the effects of our attack will be delayed. Typically used for ranged attacks.
             if (_ticksToTarget > 0)
-            {
-                new ECSGameTimer(_owner, new ECSGameTimer.ECSTimerCallback(AttackComponent.weaponAction.Execute), _ticksToTarget);
-
-                // This is done in weaponAction.Execute(), but we must not wait for the attack to reach our target.
-                AttackComponent.weaponAction.AttackFinished = true;
-            }
+                _ = new ECSGameTimer(_owner, AttackComponent.weaponAction.Execute, _ticksToTarget);
             else
                 AttackComponent.weaponAction.Execute();
-
-            _lastAttackData = _owner.TempProperties.GetProperty<AttackData>(LAST_ATTACK_DATA, null);
         }
 
         protected virtual bool FinalizeMeleeAttack()
         {
             // Melee weapons tick every TICK_INTERVAL_FOR_NON_ATTACK if they didn't attack.
-            if (_lastAttackData != null &&
-                _lastAttackData.AttackResult is not eAttackResult.Missed
-                and not eAttackResult.HitUnstyled
-                and not eAttackResult.HitStyle
-                and not eAttackResult.Evaded
-                and not eAttackResult.Blocked
-                and not eAttackResult.Parried)
+            if (LastAttackData != null)
             {
-                _interval = TICK_INTERVAL_FOR_NON_ATTACK;
+                switch (LastAttackData.AttackResult)
+                {
+                    case eAttackResult.OutOfRange:
+                    case eAttackResult.TargetNotVisible:
+                    case eAttackResult.NotAllowed_ServerRules:
+                    case eAttackResult.TargetDead:
+                    case eAttackResult.NoValidTarget:
+                    {
+                        _interval = TICK_INTERVAL_FOR_NON_ATTACK;
 
-                if (RoundWithNoAttackTime == 0)
-                    RoundWithNoAttackTime = GameLoop.GameLoopTime;
+                        if (RoundWithNoAttackTime == 0)
+                            RoundWithNoAttackTime = GameLoop.GameLoopTime;
 
-                return false;
+                        return false;
+                    }
+                    case eAttackResult.Fumbled:
+                    {
+                        StyleComponent.NextCombatStyle = null;
+                        StyleComponent.NextCombatBackupStyle = null;
+                        _interval = AttackComponent.AttackSpeed(_weapon, _leftWeapon) * 2;
+                        return true;
+                    }
+                }
             }
-            else
-            {
-                _interval = AttackComponent.AttackSpeed(_weapon, _leftWeapon);
-                StyleComponent.NextCombatStyle = null;
-                StyleComponent.NextCombatBackupStyle = null;
-                return true;
-            }
+
+            _interval = AttackComponent.AttackSpeed(_weapon, _leftWeapon);
+            return true;
         }
 
         protected virtual bool FinalizeRangedAttack()
         {
-            if (CheckInterruptTimer())
+            _owner.rangeAttackComponent.RangedAttackState = eRangedAttackState.None;
+            _halfwayDrawChecked = false;
+            return true;
+        }
+
+        public virtual void OnForcedWeaponSwitch() { }
+
+        protected virtual void InterruptAim(GameLiving attacker) { }
+
+        public bool PerformOnAttackedInterruptCheck(GameLiving attacker)
+        {
+            // Classic mechanics interrupt immediately only if the target is holding (past 100% draw time).
+            if (_owner.rangeAttackComponent.RangedAttackState is not eRangedAttackState.ReadyToFire)
                 return false;
 
-            // Need to find a way to not have to call 'AttackSpeed' again.
-            _interval = AttackComponent.AttackSpeed(_weapon);
-            _owner.rangeAttackComponent.AttackStartTime = GameLoop.GameLoopTime;
-            _owner.rangeAttackComponent.RangedAttackState = eRangedAttackState.Aim;
+            InterruptAim(attacker);
+            return true;
+        }
 
-            if (_owner.rangeAttackComponent.RangedAttackType != eRangedAttackType.Long)
-            {
-                _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
+        private bool PerformDuringDrawInterruptCheck()
+        {
+            if (_halfwayDrawChecked)
+                return false;
 
-                if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.SureShot))
-                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.SureShot;
-                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.RapidFire))
-                {
-                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.RapidFire;
-                    _interval = Math.Max(1500, _interval /= 2);
-                }
-                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.SureShot))
-                    _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Long;
-            }
+            _halfwayDrawChecked = true;
 
-            // The 'stance' parameter appears to be used to tell whether or not the animation should be held, and doesn't seem to be related to the weapon speed.
-            foreach (GamePlayer player in _owner.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
-                player.Out.SendCombatAnimation(_owner, null, (ushort) (_weapon != null ? _weapon.Model : 0), 0x00, player.Out.BowPrepare, 0x1A, 0x00, 0x00);
+            if (!_owner.IsInterrupted(out GameLiving lastInterrupter))
+                return false;
 
+            InterruptAim(lastInterrupter);
             return true;
         }
 
         public virtual void CleanUp()
         {
-            _owner.TempProperties.RemoveProperty(LAST_ATTACK_DATA);
+            LastAttackData = null;
+            _target = null;
+            _firstTick = true;
+            _styleChainStage = 0;
+            _halfwayDrawChecked = false;
         }
     }
 }

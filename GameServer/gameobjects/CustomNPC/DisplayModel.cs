@@ -1,14 +1,12 @@
-
-
-using System;
+using DOL.AI;
 using DOL.Database;
 
-namespace DOL.GS {
+namespace DOL.GS
+{
     public class DisplayModel : GameNPC
     {
         private GamePlayer m_displayedPlayer;
-        
-        
+
         public DisplayModel(GamePlayer player, DbInventoryItem item)
         {
             m_displayedPlayer = player;
@@ -23,8 +21,6 @@ namespace DOL.GS {
             this.Model = tmpModel;
             //mob.Model = 8;
             this.Name = player.Name + "'s Reflection";
-
-            this.CurrentSpeed = 0;
             this.MaxSpeedBase = 200;
             this.GuildName = "A Faded You";
             this.Size = 50;
@@ -45,6 +41,12 @@ namespace DOL.GS {
             this.Inventory = template.CloseTemplate();
         }
 
+        public override ABrain SetOwnBrain(ABrain brain)
+        {
+            // Every created NPC receives a default brain trough this method.
+            return null;
+        }
+
         public override bool Interact(GamePlayer player)
         {
             player.Out.SendLivingEquipmentUpdate(this);
@@ -55,13 +57,8 @@ namespace DOL.GS {
         {
             ObjectState = eObjectState.Active;
             m_spawnTick = GameLoop.GameLoopTime + 120*1000;
-            
-            m_displayedPlayer.Out.SendNPCCreate(this);
-            m_displayedPlayer.Out.SendLivingEquipmentUpdate(this);
-            
+            ClientService.CreateObjectForPlayer(m_displayedPlayer, this);
             return true;
         }
-        
-        
     }
 }

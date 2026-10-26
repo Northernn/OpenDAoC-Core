@@ -1,18 +1,19 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
+using System.Numerics;
 using DOL.AI.Brain;
-using DOL.Events;
 using DOL.Database;
+using DOL.Events;
 using DOL.GS;
 using DOL.GS.PacketHandler;
+using OpenDAoC.Pathing;
+using static DOL.GS.Pathfinder;
 
 namespace DOL.GS
 {
     public class OlcasarGeomancer : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public OlcasarGeomancer()
             : base()
@@ -28,10 +29,7 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100  * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override void OnAttackEnemy(AttackData ad)
         {
             if(ad != null)
@@ -46,11 +44,7 @@ namespace DOL.GS
             get { return 100000; }
         }
 
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+        public override int MeleeAttackRange => 450;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 350;
@@ -68,7 +62,7 @@ namespace DOL.GS
 
             return base.HasAbility(keyName);
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC npc in GetNPCsInRadius(8000))
             {
@@ -77,20 +71,13 @@ namespace DOL.GS
                     npc.RemoveFromWorld();
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60164613);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Charisma = npcTemplate.Charisma;
-            Empathy = npcTemplate.Empathy;
+
             GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 19, 0, 0, 0);
             Inventory = template.CloseTemplate();
@@ -101,7 +88,6 @@ namespace DOL.GS
 
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
             OlcasarGeomancerBrain sBrain = new OlcasarGeomancerBrain();
             SetOwnBrain(sBrain);
             SaveIntoDatabase();
@@ -138,12 +124,10 @@ namespace DOL.GS
                 OG.BodyType = 8; //magician
                 OG.MeleeDamageType = eDamageType.Slash;
                 OG.Faction = FactionMgr.GetFactionByID(96);
-                OG.Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
                 OG.X = 39152;
                 OG.Y = 36878;
                 OG.Z = 14975;
-                OG.MaxDistance = 2000;
                 OG.MaxSpeedBase = 300;
                 OG.Heading = 2033;
 
@@ -179,13 +163,12 @@ namespace DOL.GS
                     spell.Range = 500;
                     spell.Damage = 350;
                     spell.SpellID = 11860;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.DirectDamageNoVariance.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Matter;
                     m_OGDD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OGDD);
                 }
                 return m_OGDD;
             }
@@ -197,8 +180,7 @@ namespace DOL.AI.Brain
 {
     public class OlcasarGeomancerBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public OlcasarGeomancerBrain()
             : base()
@@ -208,12 +190,12 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public static bool spawnadds = false;
+        public bool spawnadds = false;
         private bool RemoveAdds = false;
         public override void Think()
         {
@@ -272,10 +254,10 @@ namespace DOL.AI.Brain
             base.Think();
         }
         #region Cast root on random target
-        public static bool CanCast2 = false;
-        public static bool StartCastRoot = false;
-        public static GamePlayer randomtarget2 = null;
-        public static GamePlayer RandomTarget2
+        public bool CanCast2 = false;
+        public bool StartCastRoot = false;
+        public GamePlayer randomtarget2 = null;
+        public GamePlayer RandomTarget2
         {
             get { return randomtarget2; }
             set { randomtarget2 = value; }
@@ -303,7 +285,7 @@ namespace DOL.AI.Brain
                     if (CanCast2 == false)
                     {
                         GamePlayer Target = (GamePlayer)Enemys_To_Root[Util.Random(0, Enemys_To_Root.Count - 1)];//pick random target from list
-                        RandomTarget2 = Target;//set random target to static RandomTarget
+                        RandomTarget2 = Target;
                         new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastRoot), 2000);
                         CanCast2 = true;
                     }
@@ -363,7 +345,7 @@ namespace DOL.AI.Brain
             return 0;
         }
 
-        public static bool CanCastAoeSnare = false;
+        public bool CanCastAoeSnare = false;
         public int CastAoeSnare(ECSGameTimer timer)
         {
             if (Body.IsAlive && HasAggro)
@@ -397,13 +379,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Geomancer Damage Shield";
                     spell.TooltipId = 57;
                     spell.SpellID = 11717;
-                    spell.Target = "Self";
+                    spell.Target = eSpellTarget.SELF.ToString();
                     spell.Type = "DamageShield";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int) eDamageType.Heat;
                     m_OGDS = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OGDS);
                 }
                 return m_OGDS;
             }
@@ -426,13 +407,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Geomancer Root";
                     spell.TooltipId = 5089;
                     spell.SpellID = 11718;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "SpeedDecrease";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int) eDamageType.Matter;
                     m_OGRoot = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OGRoot);
                 }
                 return m_OGRoot;
             }
@@ -457,13 +437,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Olcasar Snare";
                     spell.TooltipId = 77;
                     spell.SpellID = 11862;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.SpeedDecrease.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Matter;
                     m_OGAoeSnare = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OGAoeSnare);
                 }
                 return m_OGAoeSnare;
             }
@@ -485,12 +464,11 @@ namespace DOL.AI.Brain
                     spell.Name = "Olcasar Tear";
                     spell.TooltipId = 5126;
                     spell.SpellID = 11861;
-                    spell.Target = "Self";
+                    spell.Target = eSpellTarget.SELF.ToString();
                     spell.Type = "Heal";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     m_OGBubbleEffect = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_OGBubbleEffect);
                 }
                 return m_OGBubbleEffect;
             }
@@ -532,27 +510,61 @@ namespace DOL.GS
             get { return 10000; }
         }
 
-        public override void DropLoot(GameObject killer) //no loot
-        {
-        }
+        public override bool CanDropLoot => false;
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
+        private GameObject _realKiller;
+
         public override void Die(GameObject killer)
         {
-            BroadcastMessage(String.Format("As Olcasar minion falls to the ground, he begins to mutter some strange words and his slain minion rises back from the dead."));
-            OGAdds Add = new OGAdds();
-            Add.X = killer.X + Util.Random(-50, 80);
-            Add.Y = killer.Y + Util.Random(-50, 80);
-            Add.Z = killer.Z;
-            Add.CurrentRegion = killer.CurrentRegion;
-            Add.Heading = killer.Heading;
-            Add.AddToWorld();
+            _realKiller = killer;
             base.Die(null); // null to not gain experience
+        }
+
+        public override void ProcessDeath(GameObject killer)
+        {
+            // Only spawn a replacement add while the boss is still alive, otherwise the resurrect chain would go on forever.
+            bool bossAlive = false;
+
+            foreach (GameNPC npc in GetNPCsInRadius(8000))
+            {
+                if (npc.IsAlive && npc.Brain is OlcasarGeomancerBrain)
+                {
+                    bossAlive = true;
+                    break;
+                }
+            }
+
+            GameObject realKiller = _realKiller;
+
+            if (bossAlive && realKiller != null)
+            {
+                BroadcastMessage(String.Format("As Olcasar minion falls to the ground, he begins to mutter some strange words and his slain minion rises back from the dead."));
+                Vector3 position = new(realKiller.X, realKiller.Y, realKiller.Z);
+                Zone zone = realKiller.CurrentZone;
+                bool usePathfinding = zone != null && zone.IsPathfindingEnabled;
+                EDtPolyFlags[] filters = usePathfinding ? PathfindingProvider.Instance.DefaultFilters : null;
+
+                // Pick positions on the navmesh whenever possible, so that adds can't spawn inside walls.
+                Vector3 spawnPoint = usePathfinding ?
+                    PathfindingProvider.Instance.GetRandomPoint(zone, position, 80, filters) ?? position :
+                    new(realKiller.X + Util.Random(-50, 80), realKiller.Y + Util.Random(-50, 80), realKiller.Z);
+
+                OGAdds Add = new OGAdds();
+                Add.X = (int) spawnPoint.X;
+                Add.Y = (int) spawnPoint.Y;
+                Add.Z = (int) spawnPoint.Z;
+                Add.CurrentRegion = realKiller.CurrentRegion;
+                Add.Heading = realKiller.Heading;
+                Add.AddToWorld();
+            }
+
+            base.ProcessDeath(killer);
         }
         public override short Strength { get => base.Strength; set => base.Strength = 300; }
         public override short Quickness { get => base.Quickness; set => base.Quickness = 80; } 
@@ -575,12 +587,10 @@ namespace DOL.GS
             Model = 925;
             Name = "geomancer minion";
             RespawnInterval = -1;
-            MaxDistance = 0;
             TetherRange = 0;
             Size = (byte) Util.Random(45, 55);
             Level = (byte) Util.Random(62, 66);
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
             BodyType = 8;
             Realm = eRealm.None;
             OGAddsBrain adds = new OGAddsBrain();
@@ -595,8 +605,7 @@ namespace DOL.AI.Brain
 {
     public class OGAddsBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public OGAddsBrain()
             : base()
@@ -657,13 +666,12 @@ namespace DOL.AI.Brain
                     spell.Message4 = "{0} recovers from the stun.";
                     spell.TooltipId = 2132;
                     spell.SpellID = 11864;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "StyleStun";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Body;
                     m_addstun = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_addstun);
                 }
                 return m_addstun;
             }

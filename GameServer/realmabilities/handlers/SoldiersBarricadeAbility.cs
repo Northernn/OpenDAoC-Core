@@ -21,15 +21,8 @@ namespace DOL.GS.RealmAbilities
 			if (CheckPreconditions(living, DEAD | SITTING | MEZZED | STUNNED)) return;
 			GamePlayer player = living as GamePlayer;
 
-			/// [Atlas - Takii] We don't want this "does not stack" functionality in OF.
-// 			if (player.TempProperties.getProperty(BofBaSb, false))
-// 			{
-// 				player.Out.SendMessage("You already an effect of that type!", eChatType.CT_SpellResisted, eChatLoc.CL_SystemWindow);
-// 				return;
-// 			}
-
 			m_value = GetArmorFactorAmount();
-			
+
 			DisableSkill(living);
 			ArrayList targets = new ArrayList();
 			if (player.Group == null)
@@ -47,13 +40,13 @@ namespace DOL.GS.RealmAbilities
 			{
 				//send spelleffect
 				if (!target.IsAlive) continue;
-				success = !target.TempProperties.GetProperty(BofBaSb, false);
+				success = !target.TempProperties.GetProperty<bool>(BofBaSb);
 				foreach (GamePlayer visPlayer in target.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 					visPlayer.Out.SendSpellEffectAnimation(player, target, 7015, 0, false, System.Convert.ToByte(success));
 				if (success)
 					if (target != null)
 					{
-						new SoldiersBarricadeECSEffect(new ECSGameEffectInitParams(target, m_duration, m_value));
+						ECSGameEffectFactory.Create(new(target, m_duration, m_value), static (in i) => new SoldiersBarricadeECSEffect(i));
 					}
 			}
 

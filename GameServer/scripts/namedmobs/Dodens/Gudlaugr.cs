@@ -19,20 +19,11 @@ namespace DOL.GS.Scripts
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(9919);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			Faction = FactionMgr.GetFactionByID(779);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			BodyType = 1;
-			ScalingFactor = 40;
 			GudlaugrBrain sbrain = new GudlaugrBrain();
 			SetOwnBrain(sbrain);
 			base.AddToWorld();
@@ -40,19 +31,8 @@ namespace DOL.GS.Scripts
 			return true;
 		}
 
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get
-			{
-				return 350;
-			}
-			set
-			{ }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -85,10 +65,11 @@ namespace DOL.GS.Scripts
 		}
 		public override void OnAttackEnemy(AttackData ad)
 		{
-			GudlaugrBrain brain = new GudlaugrBrain();
+			GudlaugrBrain brain = Brain as GudlaugrBrain;
+
 			if (TargetObject != null)
 			{
-				if (ad.Target.IsWithinRadius(this, AttackRange))
+				if (ad.Target.IsWithinRadius(this, attackComponent.AttackRange))
 				{
 					if (!ad.Target.effectListComponent.ContainsEffectForEffectType(eEffect.Bleed))
 					{
@@ -116,7 +97,7 @@ namespace DOL.GS.Scripts
 		{
 			public GudlaugrBrain() : base() { }
 
-			public static bool transmorph = true;
+			public bool transmorph = true;
 			public override void Think()
 			{
 				if (Body.InCombat && Body.IsAlive && HasAggro)
@@ -154,7 +135,6 @@ namespace DOL.GS.Scripts
 				if (!rage)
 				{
 					// transmorph to little white wolf
-					Body.ScalingFactor = 40;
 					Body.Model = 650;
 					Body.Size = 40;
 					Body.Strength = Body.NPCTemplate.Strength;
@@ -162,7 +142,6 @@ namespace DOL.GS.Scripts
 				else
 				{
 					// transmorph to demon wolf
-					Body.ScalingFactor = 60;
 					Body.Strength = 330;
 					Body.Model = 649;
 					Body.Size = 110;
@@ -200,13 +179,12 @@ namespace DOL.GS.Scripts
 						spell.Duration = 25;
 						spell.DamageType = 10;
 						spell.SpellID = 20300;
-						spell.Target = "Enemy";
+						spell.Target = eSpellTarget.ENEMY.ToString();
 						spell.MoveCast = true;
 						spell.Type = eSpellType.StyleSpeedDecrease.ToString();
 						spell.Message1 = "You begin to move more slowly!";
 						spell.Message2 = "{0} begins moving more slowly!";
 						m_Snare = new Spell(spell, 60);
-						SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Snare);
 					}
 					return m_Snare;
 				}
@@ -241,13 +219,12 @@ namespace DOL.GS.Scripts
 						spell.Damage = 100;
 						spell.DamageType = 10;
 						spell.SpellID = 20209;
-						spell.Target = "Enemy";
+						spell.Target = eSpellTarget.ENEMY.ToString();
 						spell.MoveCast = true;
 						spell.Type = eSpellType.StyleBleeding.ToString();
 						spell.Message1 = "You are bleeding! ";
 						spell.Message2 = "{0} is bleeding! ";
 						m_Bleed = new Spell(spell, 60);
-						SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Bleed);
 					}
 					return m_Bleed;
 				}

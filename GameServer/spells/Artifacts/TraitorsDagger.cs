@@ -25,7 +25,7 @@ using DOL.GS.Effects;
 
 namespace DOL.GS.Spells
 {
-	[SpellHandlerAttribute("TraitorsDaggerProc")]
+	[SpellHandler(eSpellType.TraitorsDaggerProc)]
 	public class TraitorsDaggerProc : OffensiveProcSpellHandler
 	{
 		public override void OnEffectStart(GameSpellEffect effect)
@@ -65,7 +65,7 @@ namespace DOL.GS.Spells
 		public TraitorsDaggerProc(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) { }
 	}
 
-    [SpellHandler("DdtProcDd")]
+    [SpellHandler(eSpellType.DdtProcDd)]
     public class DdtProcDd:DirectDamageSpellHandler
     {
         public DdtProcDd(GameLiving caster,Spell spell,SpellLine line) : base(caster,spell,line) { }
@@ -77,7 +77,7 @@ namespace DOL.GS.Spells
         }
     }
 
-    [SpellHandler("TraitorsDaggerSummon")]
+    [SpellHandler(eSpellType.TraitorsDaggerSummon)]
     public class TraitorsDaggerSummon : SummonSpellHandler
     {
         private ISpellHandler _trap;
@@ -87,8 +87,7 @@ namespace DOL.GS.Spells
             //Set pet infos & Brain
             base.ApplyEffectOnTarget(target);
             ProcPetBrain petBrain = (ProcPetBrain) m_pet.Brain;
-            petBrain.AddToAggroList(target, 1);
-            petBrain.Think();
+            petBrain.AddToAggroList(target);
         }
 
         protected override GameSummonedPet GetGamePet(INpcTemplate template) { return new TraitorDaggerPet(template); }
@@ -119,7 +118,7 @@ namespace DOL.GS.Spells
             dbs.Icon = 11020;
             dbs.ClientEffect = 11020;
             dbs.DamageType = 10;
-            dbs.Target = "Enemy";
+            dbs.Target = eSpellTarget.ENEMY.ToString();
             dbs.Radius = 0;
             dbs.Type = eSpellType.PetLifedrain.ToString();
             dbs.Damage = 70;

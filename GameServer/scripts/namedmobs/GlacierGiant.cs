@@ -34,15 +34,8 @@ namespace DOL.GS
 		{
 			get { return 100000; }
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -54,17 +47,7 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60161360);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
-			GlacierGiantBrain.Clear_List = false;
-			GlacierGiantBrain.RandomTarget = null;
-
 			GlacierGiantBrain sbrain = new GlacierGiantBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = false;//load from database
@@ -104,7 +87,6 @@ namespace DOL.GS
 				OF.X = 651517;
 				OF.Y = 625897;
 				OF.Z = 5320;
-				OF.MaxDistance = 5500;
 				OF.TetherRange = 5600;
 				OF.MaxSpeedBase = 280;
 				OF.Heading = 4003;
@@ -122,11 +104,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class GlacierGiantBrain : EpicBossBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public GlacierGiantBrain() : base()
 		{
 			AggroLevel = 0;//is neutral
@@ -160,8 +143,8 @@ namespace DOL.AI.Brain
 			base.Think();
 		}
 	
-		public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+		public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -217,7 +200,7 @@ namespace DOL.AI.Brain
 				}
 			}
 		}
-		public static bool Clear_List = false;
+		public bool Clear_List = false;
 		public int ListCleanTimer(ECSGameTimer timer)
         {
 			if (Body.IsAlive && Body.InCombat && HasAggro && Teleported_Players.Count > 0)

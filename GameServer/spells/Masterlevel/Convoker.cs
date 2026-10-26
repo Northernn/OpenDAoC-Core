@@ -6,13 +6,14 @@ using DOL.Events;
 using DOL.GS;
 using DOL.GS.Effects;
 using DOL.GS.PacketHandler;
+using DOL.GS.PlayerClass;
 
 namespace DOL.GS.Spells
 {
 	//http://www.camelotherald.com/masterlevels/ma.php?ml=Convoker
 	//no shared timer
 	#region Convoker-1
-	[SpellHandlerAttribute("SummonWood")]
+	[SpellHandler(eSpellType.SummonWood)]
 	public class SummonWoodSpellHandler : SummonItemSpellHandler
 	{
 		public SummonWoodSpellHandler(GameLiving caster, Spell spell, SpellLine line)
@@ -37,7 +38,7 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-2
-	[SpellHandlerAttribute("PrescienceNode")]
+	[SpellHandler(eSpellType.PrescienceNode)]
 	public class PrescienceNodeSpellHandler : FontSpellHandler
 	{
 		// constructor
@@ -66,7 +67,7 @@ namespace DOL.GS.Spells
 			dbs.ClientEffect = 7312;
 			dbs.Damage = spell.Damage;
 			dbs.DamageType = (int)spell.DamageType;
-			dbs.Target = "Enemy";
+			dbs.Target = eSpellTarget.ENEMY.ToString();
 			dbs.Radius = 0;
 			dbs.Type = eSpellType.Prescience.ToString();
 			dbs.Value = spell.Value;
@@ -84,10 +85,10 @@ namespace DOL.GS.Spells
 			heal = ScriptMgr.CreateSpellHandler(m_caster, s, sl);
 		}
 	}
-	[SpellHandlerAttribute("Prescience")]
+	[SpellHandler(eSpellType.Prescience)]
 	public class PrescienceSpellHandler : SpellHandler
 	{
-		public override bool IsOverwritable(ECSGameSpellEffect compare)
+		public override bool HasConflictingEffectWith(ISpellHandler compare)
 		{
 			return false;
 		}
@@ -113,7 +114,7 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-3
-	[SpellHandlerAttribute("PowerTrap")]
+	[SpellHandler(eSpellType.PowerTrap)]
 	public class PowerTrapSpellHandler : MineSpellHandler
 	{
 		// constructor
@@ -121,7 +122,7 @@ namespace DOL.GS.Spells
 			: base(caster, spell, line)
 		{
 			//Construct a new mine.
-			mine = new GameMine();
+			mine = new(new BlankBrain());
 			mine.Model = 2590;
 			mine.Name = spell.Name;
 			mine.Realm = caster.Realm;
@@ -130,7 +131,7 @@ namespace DOL.GS.Spells
 			mine.Z = caster.Z;
 			mine.CurrentRegionID = caster.CurrentRegionID;
 			mine.Heading = caster.Heading;
-			mine.Owner = (GamePlayer)caster;
+			mine.Owner = caster;
 
 			// Construct the mine spell
 			dbs = new DbSpell();
@@ -139,7 +140,7 @@ namespace DOL.GS.Spells
 			dbs.ClientEffect = 7313;
 			dbs.Damage = spell.Damage;
 			dbs.DamageType = (int)spell.DamageType;
-			dbs.Target = "Enemy";
+			dbs.Target = eSpellTarget.ENEMY.ToString();
 			dbs.Radius = 0;
 			dbs.Type = eSpellType.PowerRend.ToString();
 			dbs.Value = spell.Value;
@@ -161,7 +162,7 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-4
-	[SpellHandlerAttribute("SpeedWrapWard")]
+	[SpellHandler(eSpellType.SpeedWrapWard)]
 	public class SpeedWrapWardSpellHandler : FontSpellHandler
 	{
 		// constructor
@@ -190,7 +191,7 @@ namespace DOL.GS.Spells
 			dbs.ClientEffect = 7237;
 			dbs.Damage = spell.Damage;
 			dbs.DamageType = (int)spell.DamageType;
-			dbs.Target = "Enemy";
+			dbs.Target = eSpellTarget.ENEMY.ToString();
 			dbs.Radius = 0;
 			dbs.Type = eSpellType.SpeedWrap.ToString();
 			dbs.Value = spell.Value;
@@ -209,13 +210,14 @@ namespace DOL.GS.Spells
 			heal = ScriptMgr.CreateSpellHandler(m_caster, s, sl);
 		}
 	}
-	[SpellHandlerAttribute("SpeedWrap")]
+	[SpellHandler(eSpellType.SpeedWrap)]
 	public class SpeedWrapSpellHandler : SpellHandler
 	{
-		public override int CalculateSpellResistChance(GameLiving target)
+		public override double CalculateSpellResistChance(GameLiving target)
 		{
 			return 0;
 		}
+
 		public override void OnEffectStart(GameSpellEffect effect)
 		{
 			base.OnEffectStart(effect);
@@ -234,13 +236,13 @@ namespace DOL.GS.Spells
 
 	//shared timer 1
 	#region Convoker-5
-	[SpellHandlerAttribute("SummonWarcrystal")]
+	[SpellHandler(eSpellType.SummonWarcrystal)]
 	public class SummonWarcrystalSpellHandler : SummonItemSpellHandler
 	{
 		public SummonWarcrystalSpellHandler(GameLiving caster, Spell spell, SpellLine line)
 			: base(caster, spell, line)
 		{
-			string ammo = "";
+			string ammo = string.Empty;
 			switch (Util.Random(1, 2))
 			{
 				case 1:
@@ -270,7 +272,7 @@ namespace DOL.GS.Spells
 
 	//shared timer 1
 	#region Convoker-6
-	[SpellHandlerAttribute("Battlewarder")]
+	[SpellHandler(eSpellType.Battlewarder)]
 	public class BattlewarderSpellHandler : SpellHandler
 	{
 		private GameNPC warder;
@@ -284,7 +286,7 @@ namespace DOL.GS.Spells
 			m_caster.Mana -= PowerCost(target);
 			base.FinishSpellCast(target);
 		}
-		public override bool IsOverwritable(ECSGameSpellEffect compare)
+		public override bool HasConflictingEffectWith(ISpellHandler compare)
 		{
 			return false;
 		}
@@ -298,7 +300,7 @@ namespace DOL.GS.Spells
 			if ((effect.Owner is GamePlayer))
 			{
 				GamePlayer casterPlayer = effect.Owner as GamePlayer;
-				if (casterPlayer.GroundTarget != null && casterPlayer.GroundTargetInView)
+				if (casterPlayer.GroundTarget.IsValid && casterPlayer.GroundTargetInView)
 				{
 					GameEventMgr.AddHandler(casterPlayer, GamePlayerEvent.Moving, new DOLEventHandler(PlayerMoves));
 					GameEventMgr.AddHandler(warder, GameLivingEvent.Dying, new DOLEventHandler(BattleWarderDie));
@@ -365,7 +367,7 @@ namespace DOL.GS.Spells
 		public override bool CheckBeginCast(GameLiving selectedTarget)
 		{
 			if (!base.CheckBeginCast(selectedTarget)) return false;
-			if (!(m_caster.GroundTarget != null && m_caster.GroundTargetInView))
+			if (!(m_caster.GroundTarget.IsValid && m_caster.GroundTargetInView))
 			{
 				MessageToCaster("Your area target is out of range.  Set a closer ground position.", eChatType.CT_SpellResisted);
 				return false;
@@ -384,9 +386,8 @@ namespace DOL.GS.Spells
 			warder.Realm = caster.Realm;
 			warder.Name = "Battle Warder";
 			warder.Model = 993;
-			warder.CurrentSpeed = 0;
 			warder.MaxSpeedBase = 0;
-			warder.GuildName = "";
+			warder.GuildName = string.Empty;
 			warder.Size = 50;
 		}
 	}
@@ -394,7 +395,7 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-7
-	[SpellHandlerAttribute("DissonanceTrap")]
+	[SpellHandler(eSpellType.DissonanceTrap)]
 	public class DissonanceTrapSpellHandler : MineSpellHandler
 	{
 		// constructor
@@ -402,7 +403,7 @@ namespace DOL.GS.Spells
 			: base(caster, spell, line)
 		{
 			//Construct a new mine.
-			mine = new GameMine();
+			mine = new(new BlankBrain());
 			mine.Model = 2588;
 			mine.Name = spell.Name;
 			mine.Realm = caster.Realm;
@@ -411,7 +412,7 @@ namespace DOL.GS.Spells
 			mine.Z = caster.Z;
 			mine.CurrentRegionID = caster.CurrentRegionID;
 			mine.Heading = caster.Heading;
-			mine.Owner = (GamePlayer)caster;
+			mine.Owner = caster;
 
 			// Construct the mine spell
 			dbs = new DbSpell();
@@ -420,7 +421,7 @@ namespace DOL.GS.Spells
 			dbs.ClientEffect = 7255;
 			dbs.Damage = spell.Damage;
 			dbs.DamageType = (int)spell.DamageType;
-			dbs.Target = "Enemy";
+			dbs.Target = eSpellTarget.ENEMY.ToString();
 			dbs.Radius = 0;
 			dbs.Type = eSpellType.DirectDamage.ToString();
 			dbs.Value = spell.Value;
@@ -442,10 +443,10 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-8
-	[SpellHandler("BrittleGuard")]
+	[SpellHandler(eSpellType.BrittleGuard)]
 	public class BrittleGuardSpellHandler : MasterlevelHandling
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		GameNPC summoned = null;
 		GameSpellEffect beffect = null;
@@ -482,7 +483,7 @@ namespace DOL.GS.Spells
 			}
 
 			Point2D summonloc;
-			beffect = CreateSpellEffect(target, Effectiveness);
+			beffect = CreateSpellEffect(target, CasterEffectiveness);
 			{
 				summonloc = target.GetPointFromHeading( target.Heading, 64 );
 
@@ -496,7 +497,6 @@ namespace DOL.GS.Spells
 				summoned.CurrentRegion = target.CurrentRegion;
 				summoned.Heading = (ushort)((target.Heading + 2048) % 4096);
 				summoned.Realm = target.Realm;
-				summoned.CurrentSpeed = 0;
 				summoned.Level = 1;
 				summoned.Size = 10;
 				summoned.AddToWorld();
@@ -535,7 +535,7 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-9
-	[SpellHandlerAttribute("SummonMastery")]
+	[SpellHandler(eSpellType.SummonMastery)]
 	public class Convoker9Handler : MasterlevelHandling
 		//public class Convoker9Handler : MasterlevelBuffHandling
 	{
@@ -557,8 +557,8 @@ namespace DOL.GS.Spells
 
 			// Add byNefa 04.02.2011 13:35
 			// Check if Necro try to use ML9 Convoker at own Pet
-			if  (m_player != null && m_player.CharacterClass.ID == (int)eCharacterClass.Necromancer)
-			{ // Caster is a Necro
+			if  (m_player != null && m_player.CharacterClass is ClassDisciple)
+			{
 				NecromancerPet necroPet = target as NecromancerPet;
 				if (necroPet == null || necroPet.Owner == m_player)
 				{ // Caster is a Nekro and his Target is his Own Pet
@@ -573,8 +573,8 @@ namespace DOL.GS.Spells
 		{
 			m_living = m_player.ControlledBrain.Body;
 			m_living.Level += 20;
-			m_living.BaseBuffBonusCategory[(int)eProperty.MeleeDamage] += 275;
-			m_living.BaseBuffBonusCategory[(int)eProperty.ArmorAbsorption] += 75;
+			m_living.BaseBuffBonusCategory[eProperty.MeleeDamage] += 275;
+			m_living.BaseBuffBonusCategory[eProperty.ArmorAbsorption] += 75;
 			m_living.Size += 40;
 			base.OnEffectStart(effect);
 		}
@@ -582,8 +582,8 @@ namespace DOL.GS.Spells
 		public override int OnEffectExpires(GameSpellEffect effect, bool noMessages)
 		{
 			m_living.Level -= 20;
-			m_living.BaseBuffBonusCategory[(int)eProperty.MeleeDamage] -= 275;
-			m_living.BaseBuffBonusCategory[(int)eProperty.ArmorAbsorption] -= 75;
+			m_living.BaseBuffBonusCategory[eProperty.MeleeDamage] -= 275;
+			m_living.BaseBuffBonusCategory[eProperty.ArmorAbsorption] -= 75;
 			m_living.Size -= 40;
 			return base.OnEffectExpires(effect, noMessages);
 		}
@@ -598,10 +598,10 @@ namespace DOL.GS.Spells
 
 	//no shared timer
 	#region Convoker-10
-	[SpellHandler("SummonTitan")]
+	[SpellHandler(eSpellType.SummonTitan)]
 	public class Convoker10SpellHandler : MasterlevelHandling
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		private int x, y, z;
 		GameNPC summoned = null;
@@ -642,7 +642,7 @@ namespace DOL.GS.Spells
 				MessageToCaster("NPC template " + Spell.LifeDrainReturn + " not found!", eChatType.CT_System);
 				return;
 			}
-			GameSpellEffect effect = CreateSpellEffect(target, Effectiveness);
+			GameSpellEffect effect = CreateSpellEffect(target, CasterEffectiveness);
 			TitanBrain controlledBrain = new TitanBrain(player);
 			controlledBrain.IsMainPet = false;
 			controlledBrain.WalkState = eWalkState.Stay;
@@ -658,7 +658,6 @@ namespace DOL.GS.Spells
 			summoned.CurrentRegion = player.CurrentRegion;
 			summoned.Heading = (ushort)((player.Heading + 2048) % 4096);
 			summoned.Realm = player.Realm;
-			summoned.CurrentSpeed = 0;
 			summoned.Size = 10;
 			summoned.Level = 100;
 			summoned.Flags |= GameNPC.eFlags.PEACE;
@@ -692,25 +691,21 @@ namespace DOL.GS.Spells
 			z = Caster.Z;
 			if (Spell.Target == eSpellTarget.AREA)
 			{
-				if (Caster.GroundTargetInView && Caster.GroundTarget != null)
+				if (!Caster.GroundTarget.IsValid)
 				{
-					x = Caster.GroundTarget.X;
-					y = Caster.GroundTarget.Y;
-					z = Caster.GroundTarget.Z;
+					MessageToCaster("You must set a groundtarget!", eChatType.CT_SpellResisted);
+					return false;
 				}
-				else
+
+				if (!Caster.GroundTargetInView)
 				{
-					if (Caster.GroundTarget == null)
-					{
-						MessageToCaster("You must set a groundtarget!", eChatType.CT_SpellResisted);
-						return false;
-					}
-					else
-					{
-						MessageToCaster("Your area target is not in view.", eChatType.CT_SpellResisted);
-						return false;
-					}
+					MessageToCaster("Your area target is not in view.", eChatType.CT_SpellResisted);
+					return false;
 				}
+
+				x = Caster.GroundTarget.X;
+				y = Caster.GroundTarget.Y;
+				z = Caster.GroundTarget.Z;
 			}
 			return true;
 		}
@@ -728,7 +723,7 @@ namespace DOL.GS.Spells
 			return 0;
 		}
 
-		public override int CalculateSpellResistChance(GameLiving target)
+		public override double CalculateSpellResistChance(GameLiving target)
 		{
 			return 0;
 		}
@@ -739,7 +734,7 @@ namespace DOL.GS.Spells
 #region BrittleBrain
 namespace DOL.AI.Brain
 {
-    public class BrittleBrain : ControlledNpcBrain
+    public class BrittleBrain : ControlledMobBrain
 	{
 		public BrittleBrain(GameLiving owner)
 			: base(owner)
@@ -750,9 +745,6 @@ namespace DOL.AI.Brain
 
 		public override void FollowOwner()
 		{
-			if (Body.IsAttacking)
-				Disengage();
-
 			Body.Follow(Owner, MIN_OWNER_FOLLOW_DIST, MAX_OWNER_FOLLOW_DIST);
 		}
 	}
@@ -763,7 +755,7 @@ namespace DOL.AI.Brain
 
 namespace DOL.AI.Brain
 {
-    public class TitanBrain : ControlledNpcBrain
+    public class TitanBrain : ControlledMobBrain
 	{
 		private GameLiving m_target;
 
@@ -780,23 +772,11 @@ namespace DOL.AI.Brain
 
 		#region AI
 
-		public override bool Start()
-		{
-			if (!base.Start()) return false;
-			return true;
-		}
-
-		public override bool Stop()
-		{
-			if (!base.Stop()) return false;
-			return true;
-		}
-
 		private IList FindTarget()
 		{
 			ArrayList list = new ArrayList();
 
-			foreach (GamePlayer o in Body.GetPlayersInRadius((ushort)Body.AttackRange))
+			foreach (GamePlayer o in Body.GetPlayersInRadius((ushort)Body.attackComponent.AttackRange))
 			{
 				GamePlayer p = o as GamePlayer;
 
@@ -817,7 +797,7 @@ namespace DOL.AI.Brain
 			IList enemies = new ArrayList();
 			if (Target == null)
 				enemies = FindTarget();
-			else if (!Body.IsWithinRadius(Target, Body.AttackRange))
+			else if (!Body.IsWithinRadius(Target, Body.attackComponent.AttackRange))
 				enemies = FindTarget();
 			else if (!Target.IsAlive)
 				enemies = FindTarget();
@@ -841,7 +821,7 @@ namespace DOL.AI.Brain
 				{
 					Target = null;
 				}
-				else if (Body.IsWithinRadius(Target, Body.AttackRange))
+				else if (Body.IsWithinRadius(Target, Body.attackComponent.AttackRange))
 				{
 					Body.TargetObject = Target;
 					Goto(Target);
@@ -867,15 +847,15 @@ public class MLBrain : GuardBrain
 	{
 		get { return 400; }
 	}
-	protected override void CheckNPCAggro()
+	protected override void CheckNpcAggro()
 	{
 		//Check if we are already attacking, return if yes
 		if (Body.attackComponent.AttackState)
 			return;
 
-		foreach (GameNPC npc in Body.GetNPCsInRadius((ushort)AggroRange))
+		foreach (var npc in BuildNpcAggroCandidateLoop())
 		{
-			if (AggroList.ContainsKey(npc))
+			if (IsInAggroList(npc))
 				continue; // add only new npcs
 			if ((npc.Flags & GameNPC.eFlags.FLYING) != 0)
 				continue; // let's not try to attack flying mobs
@@ -887,7 +867,7 @@ public class MLBrain : GuardBrain
 			if (!(npc.Brain is IControlledBrain || npc is GameGuard))
 				continue;
 
-			AddToAggroList(npc, npc.Level << 1);
+			AddToAggroList(npc);
 			return;
 		}
 	}

@@ -10,7 +10,6 @@ using DOL.GS.Keeps;
 using DOL.GS.Quests;
 using DOL.GS.Spells;
 using DOL.Language;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
@@ -20,7 +19,7 @@ namespace DOL.GS.PacketHandler
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
 		/// Constructs a new PacketLib for Version 1.73 clients
@@ -33,7 +32,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendWarlockChamberEffect(GamePlayer player)
 		{
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort((ushort)player.ObjectID);
 				pak.WriteByte((byte)3);
@@ -99,12 +98,7 @@ namespace DOL.GS.PacketHandler
 				pak.WriteInt(0);
 
 				foreach (GamePlayer plr in player.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
-				{
-					if (player != plr)
-						plr.Client.PacketProcessor.SendTCP(pak);
-				}
-
-				SendTCP(pak);
+					plr.Out.SendTCP(pak);
 			}
 		}
 
@@ -112,7 +106,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (m_gameClient.Player == null)
 				return;
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.UpdateIcons)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.UpdateIcons)))
 			{
 				long initPos = pak.Position;
 
@@ -186,7 +180,7 @@ namespace DOL.GS.PacketHandler
 				Region region = WorldMgr.GetRegion((ushort)m_gameClient.Player.CurrentRegionID);
 				if (region == null)
 					return;
-				using (GSTCPPacketOut pak = new GSTCPPacketOut(0xB1))
+				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(0xB1))
 				{
 					//				pak.WriteByte((byte)((region.Expansion + 1) << 4)); // Must be expansion
 					pak.WriteByte(0); // but this packet sended when client in old region. but this field must show expanstion for jump destanation region
@@ -212,7 +206,7 @@ namespace DOL.GS.PacketHandler
 				int count = entries.Length;
 				while (entries != null && count > index)
 				{
-					using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.ClientRegions)))
+					using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ClientRegions)))
 					{
 						for (int i = 0; i < 4; i++)
 						{
@@ -237,8 +231,6 @@ namespace DOL.GS.PacketHandler
 								if (ip == "any" || ip == "0.0.0.0" || ip == "127.0.0.1" || ip.StartsWith("10.13.") || ip.StartsWith("192.168."))
 									ip = ((IPEndPoint)m_gameClient.Socket.LocalEndPoint).Address.ToString();
 								pak.FillString(ip, 20);
-
-								//							DOLConsole.WriteLine(string.Format(" ip={3}; fromPort={1}; toPort={2}; num={4}; id={0}; region name={5}", entries[index].id, entries[index].fromPort, entries[index].toPort, entries[index].ip, num, entries[index].name));
 								index++;
 							}
 						}
@@ -259,10 +251,10 @@ namespace DOL.GS.PacketHandler
 				default: throw new Exception("CharacterOverview requested for unknown realm " + realm);
 			}
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.CharacterOverview)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CharacterOverview)))
 			{
 				pak.FillString(m_gameClient.Account.Name, 24);
-				IList<DbInventoryItem> items;
+				List<DbInventoryItem> items;
 				DbCoreCharacter[] characters = m_gameClient.Account.Characters;
 				if (characters == null)
 				{
@@ -459,7 +451,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (m_gameClient.Player == null)
 				return;
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.KeepInfo)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.KeepInfo)))
 			{
 
 				pak.WriteShort((ushort)keep.KeepID);
@@ -482,7 +474,7 @@ namespace DOL.GS.PacketHandler
 			if (player == null)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort((ushort)player.ObjectID);
 				pak.WriteByte(0x3); // show Hex
@@ -501,7 +493,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null || npc == null)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 
 				pak.WriteShort((ushort)npc.ObjectID);
@@ -518,10 +510,10 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.ClientState == GameClient.eClientState.CharScreen)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.Message)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.Message)))
 			{
 				pak.WriteShort(0xFFFF);
-				pak.WriteShort((ushort)m_gameClient.SessionID);
+				pak.WriteShort(m_gameClient.SessionID);
 				pak.WriteByte((byte)type);
 				pak.Fill(0x0, 3);
 
@@ -531,7 +523,7 @@ namespace DOL.GS.PacketHandler
 				else if (loc == eChatLoc.CL_PopupWindow)
 					str = "##";
 				else
-					str = "";
+					str = string.Empty;
 
 				pak.WriteString(str + msg);
 				SendTCP(pak);
@@ -541,33 +533,17 @@ namespace DOL.GS.PacketHandler
 		public override void SendQuestListUpdate()
 		{
 			SendTaskInfo();
-
-			byte questIndex;
-			HashSet<byte> sentIndexes = new();
-
-			foreach (var entry in m_gameClient.Player.QuestList)
-			{
-				questIndex = (byte) (entry.Value + 1);
-				SendQuestPacket(entry.Key, questIndex);
-				sentIndexes.Add(questIndex);
-			}
-
-			for (byte i = 1; i < 26; i++)
-			{
-				if (!sentIndexes.Contains(i))
-					SendQuestPacket(null, i);
-			}
+			base.SendQuestListUpdate(1);
 		}
 
 		public override void SendQuestUpdate(AbstractQuest quest)
 		{
-			if (m_gameClient.Player.QuestList.TryGetValue(quest, out byte index))
-				SendQuestPacket(quest, (byte) (index + 1));
+			base.SendQuestUpdate(quest, 1);
 		}
 
 		public override void SendQuestRemove(byte index)
 		{
-			SendQuestPacket(null, (byte) (index + 1));
+			base.SendQuestRemove((byte) (index + 1));
 		}
 
 		public override void SendRegionChanged()
@@ -575,7 +551,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 			SendRegions(m_gameClient.Player.CurrentRegion.Skin);
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.RegionChanged)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.RegionChanged)))
 			{
 
 	            //Dinberg - Changing to allow instances...
@@ -589,7 +565,7 @@ namespace DOL.GS.PacketHandler
 
 		protected override void SendQuestPacket(AbstractQuest quest, byte index)
 		{
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.QuestEntry)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 			{
 				pak.WriteByte(index);
 				if (quest.Step <= 0)
@@ -600,28 +576,19 @@ namespace DOL.GS.PacketHandler
 				}
 				else
 				{
-					string name = quest.Name;
-					string desc = quest.Description;
-					if (name.Length > byte.MaxValue)
-					{
-						if (log.IsWarnEnabled) log.Warn(quest.GetType().ToString() + ": name is too long for 1.71 clients (" + name.Length + ") '" + name + "'");
-						name = name.Substring(0, byte.MaxValue);
-					}
-					if (desc.Length > ushort.MaxValue)
-					{
-						if (log.IsWarnEnabled) log.Warn(quest.GetType().ToString() + ": description is too long for 1.71 clients (" + desc.Length + ") '" + desc + "'");
-						desc = desc.Substring(0, ushort.MaxValue);
-					}
-					if (name.Length + desc.Length > 2048 - 10)
-					{
-						if (log.IsWarnEnabled) log.Warn(quest.GetType().ToString() + ": name + description length is too long and would have crashed the client.\nName (" + name.Length + "): '" + name + "'\nDesc (" + desc.Length + "): '" + desc + "'");
-						name = name.Substring(0, 32);
-						desc = desc.Substring(0, 2048 - 10 - name.Length); // all that's left
-					}
-					pak.WriteByte((byte)name.Length);
-					pak.WriteShortLowEndian((ushort)desc.Length);
-					pak.WriteStringBytes(name); //Write Quest Name without trailing 0
-					pak.WriteStringBytes(desc); //Write Quest Description without trailing 0
+					ReadOnlySpan<char> nameSpan = quest.Name;
+					ReadOnlySpan<char> descSpan = quest.Description;
+
+					if (nameSpan.Length > byte.MaxValue)
+						nameSpan = nameSpan[..byte.MaxValue];
+
+					if (descSpan.Length > ushort.MaxValue)
+						descSpan = descSpan[..ushort.MaxValue];
+
+					pak.WriteByte((byte) nameSpan.Length);
+					pak.WriteShortLowEndian((ushort) descSpan.Length);
+					pak.WriteNonNullTerminatedString(nameSpan); //Write Quest Name without trailing 0
+					pak.WriteNonNullTerminatedString(descSpan); //Write Quest Description without trailing 0
 				}
 				SendTCP(pak);
 			}
@@ -631,20 +598,20 @@ namespace DOL.GS.PacketHandler
 		{
 			string name = BuildTaskString();
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.QuestEntry)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 			{
 				pak.WriteByte(0); //index
 				pak.WriteShortLowEndian((ushort)name.Length);
 				pak.WriteByte((byte)0);
-				pak.WriteStringBytes(name); //Write Quest Name without trailing 0
-				pak.WriteStringBytes(""); //Write Quest Description without trailing 0
+				pak.WriteNonNullTerminatedString(name); //Write Quest Name without trailing 0
+				pak.WriteNonNullTerminatedString(""); //Write Quest Description without trailing 0
 				SendTCP(pak);
 			}
 		}
 
 		public override void SendSiegeWeaponInterface(GameSiegeWeapon siegeWeapon, int time)
 		{
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.SiegeWeaponInterface)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponInterface)))
 			{
 				ushort flag = (ushort)((siegeWeapon.EnableToMove ? 1 : 0) | siegeWeapon.AmmoType << 8);
 				pak.WriteShort(flag); //byte Ammo,  byte SiegeMoving(1/0)

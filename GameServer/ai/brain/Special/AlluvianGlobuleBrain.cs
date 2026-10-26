@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using DOL.GS;
+﻿using DOL.GS;
+using DOL.GS.PacketHandler;
 using DOL.GS.Scheduler;
 
 namespace DOL.AI.Brain
@@ -10,15 +10,6 @@ namespace DOL.AI.Brain
 	public class AlluvianGlobuleBrain : StandardMobBrain
 	{
 		internal bool hasGrown = false;
-
-		/// <summary>
-		/// Put on lower think cycle so mobs spawn a little slower.
-		/// </summary>
-		public AlluvianGlobuleBrain() : base()
-		{
-			ThinkInterval = 3000;
-			hasGrown = false;
-		}
 
 		/// <summary>
 		/// Determine if there's currently a storm to do effect.
@@ -34,64 +25,8 @@ namespace DOL.AI.Brain
 					Grow();
 				}
 			}
-			if (!Body.IsReturningToSpawnPoint)
-			{
-				if (!Body.attackComponent.AttackState && AggroRange > 0)
-				{
-					var currentPlayersSeen = new List<GamePlayer>();
-					foreach (GamePlayer player in Body.GetPlayersInRadius((ushort) AggroRange))
-					{
-						if (!PlayersSeen.Contains(player))
-						{
-							PlayersSeen.Add(player);
-						}
-						currentPlayersSeen.Add(player);
-					}
-					for (int i = 0; i < PlayersSeen.Count; i++)
-					{
-						if (!currentPlayersSeen.Contains(PlayersSeen[i]))
-						{
-							PlayersSeen.RemoveAt(i);
-						}
-					}
-				}
-				if (!Body.attackComponent.AttackState && AggroLevel > 0)
-				{
-					CheckPlayerAggro();
-					CheckNPCAggro();
-				}
-				if (HasAggro)
-				{
-					AttackMostWanted();
-					return;
-				}
-				if (!HasAggro)
-				{
-					if (Body.attackComponent.AttackState)
-					{
-						Body.StopAttack();
-					}
 
-					Body.TargetObject = null;
-				}
-			}
-			if (!Body.attackComponent.AttackState && !Body.IsMoving && !Body.InCombat)
-			{
-				// loc range around the lake that Alluvian spanws.
-				Body.WalkTo(new Point3D(544196 + Util.Random(1, 3919), 514980 + Util.Random(1, 3200), 3140 + Util.Random(1, 540)), 80);
-			}
-		}
-
-		/// <summary>
-		/// Determine most wanted player.
-		/// </summary>
-		public override void AttackMostWanted()
-		{
-			if (!IsActive)
-			{
-				return;
-			}
-			Body.TargetObject = CalculateNextAttackTarget();
+			base.Think();
 		}
 
 		/// <summary>
@@ -112,7 +47,6 @@ namespace DOL.AI.Brain
 		public bool CheckStorm()
 		{
 			var currentStorm = GameServer.Instance.WorldManager.WeatherManager[Body.CurrentRegionID];
-			var Glob = Body as Alluvian;
 			if (currentStorm != null)
 			{
 				var weatherCurrentPosition = currentStorm.CurrentPosition(SimpleScheduler.Ticks);
@@ -120,9 +54,9 @@ namespace DOL.AI.Brain
 				{
 					if (Util.Random(4) == 0)
 					{
-						foreach (GamePlayer player in Glob.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
+						foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 						{
-							player.Out.SendSpellEffectAnimation(Glob, Glob, (ushort)6053, 0, false, 1);
+							player.Out.SendSpellEffectAnimation(Body, Body, (ushort)6053, 0, false, 1);
 						}
 						return true;
 					}
@@ -138,8 +72,9 @@ namespace DOL.AI.Brain
 		{
 			Body.Size = 95;
 			Body.Level = (byte)Util.Random(10, 11);
-			Body.AutoSetStats();
+			Body.SetStats();
 			hasGrown = true;
+			Message.MessageToArea(Body, "Storm-water sluices into the alluvian globule, and it swells to twice its size!", eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow, WorldMgr.VISIBILITY_DISTANCE);
 		}
 	}
 }

@@ -28,15 +28,8 @@ namespace DOL.GS
 				default: return 40;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -75,12 +68,10 @@ namespace DOL.GS
 			Empathy = 400;
 
 			MaxSpeedBase = 250;
-			MaxDistance = 3500;
 			TetherRange = 3800;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			OrylleBrain sbrain = new OrylleBrain();
 			SetOwnBrain(sbrain);
@@ -91,24 +82,25 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
     public class OrylleBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OrylleBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
-			CanBAF = false;
+			CanBaf = false;
 		}
-		public static bool IsPulled = false;
+		public bool IsPulled = false;
         #region Throw Player
         List<GamePlayer> Port_Enemys = new List<GamePlayer>();
-		public static bool IsTargetPicked = false;
-		public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+		public bool IsTargetPicked = false;
+		public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -156,10 +148,11 @@ namespace DOL.AI.Brain
 				Body.Health = Body.MaxHealth;
 				RandomTarget = null;//throw
 				IsTargetPicked = false;//throw
+				IsPulled = false;
 			}
 			if (HasAggro && Body.TargetObject != null)
 			{
-				if (IsTargetPicked == false && OrshomFire.FireCount > 0)
+				if (IsTargetPicked == false && IsFireAlive())
 				{
 					new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(ThrowPlayer), Util.Random(15000, 20000));//timer to port and pick player
 					IsTargetPicked = true;
@@ -182,6 +175,22 @@ namespace DOL.AI.Brain
 			}
 			base.Think();
 		}
+		private Orshom _orshom;
+		private bool IsFireAlive()
+		{
+			if (_orshom == null)
+			{
+				foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(Body.CurrentRegionID))
+				{
+					if (npc is Orshom orshom)
+					{
+						_orshom = orshom;
+						break;
+					}
+				}
+			}
+			return _orshom?.Fire != null && _orshom.Fire.IsAlive && _orshom.Fire.ObjectState is GameObject.eObjectState.Active;
+		}
 	}
 }
 /////////////////////////////////////////////////////////////Orshom////////////////////////////////
@@ -190,6 +199,7 @@ namespace DOL.GS
     public class Orshom : GameEpicBoss
 	{
 		public Orshom() : base() { }
+		public OrshomFire Fire;
 
 		[ScriptLoadedEvent]
 		public static void ScriptLoaded(DOLEvent e, object sender, EventArgs args)
@@ -207,15 +217,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -254,12 +257,10 @@ namespace DOL.GS
 			Empathy = 400;
 
 			MaxSpeedBase = 250;
-			MaxDistance = 3500;
 			TetherRange = 3800;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			OrshomBrain sbrain = new OrshomBrain();
 			SetOwnBrain(sbrain);
@@ -274,13 +275,13 @@ namespace DOL.AI.Brain
 {
     public class OrshomBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OrshomBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
-			CanBAF = false;
+			CanBaf = false;
 		}
 		private bool Spawn_Fire = false;
 		private bool RemoveAdds = false;
@@ -301,7 +302,6 @@ namespace DOL.AI.Brain
 							if (npc.IsAlive && npc.Brain is OrshomFireBrain)
 							{
 								npc.RemoveFromWorld();
-								OrshomFire.FireCount = 0;
 							}
 						}
 					}
@@ -335,13 +335,10 @@ namespace DOL.AI.Brain
 		}
 		public void SpawnFire()
 		{
-			foreach (GameNPC mob in Body.GetNPCsInRadius(8000))
-			{
-				if (mob.Brain is OrshomFireBrain)
-				{
-					return;
-				}
-			}
+			if (Body is not Orshom orshom)
+				return;
+			if (orshom.Fire != null && orshom.Fire.IsAlive && orshom.Fire.ObjectState is GameObject.eObjectState.Active)
+				return;
 			OrshomFire npc = new OrshomFire();
 			npc.X = 31406;
 			npc.Y = 69599;
@@ -350,6 +347,7 @@ namespace DOL.AI.Brain
 			npc.CurrentRegion = Body.CurrentRegion;
 			npc.RespawnInterval = -1;
 			npc.AddToWorld();
+			orshom.Fire = npc;
 		}
 	}
 }
@@ -422,12 +420,6 @@ namespace DOL.GS
 		{
 			get { return 10000; }
 		}
-		public static int FireCount = 0;
-        public override void Die(GameObject killer)
-        {
-			--FireCount;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
 		{
 			Model = 665;
@@ -439,13 +431,11 @@ namespace DOL.GS
 			Intelligence = 200;
 			Charisma = 200;
 			Empathy = 200;
-			++FireCount;
 
 			MaxSpeedBase = 0;
 			RespawnInterval = -1;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			OrshomFireBrain sbrain = new OrshomFireBrain();
 			SetOwnBrain(sbrain);
@@ -498,7 +488,6 @@ namespace DOL.GS
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Heat;
 					m_Fire_aoe = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Fire_aoe);
 				}
 
 				return m_Fire_aoe;
@@ -506,11 +495,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
     public class OrshomFireBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public OrshomFireBrain() : base()
 		{
 			AggroLevel = 100;

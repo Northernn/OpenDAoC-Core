@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using DOL.AI.Brain;
-using DOL.Events;
 using DOL.Database;
+using DOL.Events;
 using DOL.GS;
 using DOL.GS.PacketHandler;
-
 
 namespace DOL.GS
 {
@@ -62,15 +61,8 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -82,18 +74,8 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(18805);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
-			SummonerCunovindaBrain.RandomTarget = null;
-			SummonerCunovindaBrain.CanCast = false;
 			Faction = FactionMgr.GetFactionByID(187);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(206));
 			IsCloakHoodUp = true;
 
 			GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
@@ -143,12 +125,10 @@ namespace DOL.GS
 				OF.BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 				OF.MeleeDamageType = eDamageType.Crush;
 				OF.Faction = FactionMgr.GetFactionByID(187);
-				OF.Faction.AddFriendFaction(FactionMgr.GetFactionByID(206));
 
 				OF.X = 26023;
 				OF.Y = 36132;
 				OF.Z = 15998;
-				OF.MaxDistance = 2000;
 				OF.TetherRange = 1300;
 				OF.MaxSpeedBase = 250;
 				OF.Heading = 19;
@@ -167,11 +147,12 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class SummonerCunovindaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public SummonerCunovindaBrain() : base()
 		{
 			AggroLevel = 100;
@@ -207,13 +188,13 @@ namespace DOL.AI.Brain
 			}
 			base.Think();
 		}
-		public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+		public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
 		}
-		public static bool CanCast = false;
+		public bool CanCast = false;
 		List<GamePlayer> Enemys_To_DD = new List<GamePlayer>();
 		public void PickRandomTarget()
 		{
@@ -233,7 +214,7 @@ namespace DOL.AI.Brain
 				if (CanCast == false)
 				{
 					GamePlayer Target = (GamePlayer)Enemys_To_DD[Util.Random(0, Enemys_To_DD.Count - 1)];//pick random target from list
-					RandomTarget = Target;//set random target to static RandomTarget
+					RandomTarget = Target;
 					new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastBolt), 1000);
 					CanCast = true;
 				}
@@ -283,11 +264,10 @@ namespace DOL.AI.Brain
 					spell.Name = "Summoner Bolt";
 					spell.Range = 1800;
 					spell.SpellID = 11761;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Uninterruptible = true;
 					spell.Type = eSpellType.Bolt.ToString();
 					m_CunovindaBolt = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_CunovindaBolt);
 				}
 				return m_CunovindaBolt;
 			}

@@ -27,15 +27,8 @@ namespace DOL.GS
 				default: return 40;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -65,17 +58,10 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(13039);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			Faction = FactionMgr.GetFactionByID(18);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(18));
+
 			if (!Styles.Contains(Taunt2h))
 				Styles.Add(Taunt2h);
 			if (!Styles.Contains(AfterParry))
@@ -149,7 +135,6 @@ namespace DOL.GS
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Heat;
 					m_HeatProc = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_HeatProc);
 				}
 				return m_HeatProc;
 			}
@@ -160,7 +145,7 @@ namespace DOL.AI.Brain
 {
 	public class WrathOfMordredBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public WrathOfMordredBrain() : base()
 		{
 			AggroLevel = 100;
@@ -190,9 +175,9 @@ namespace DOL.AI.Brain
 					}
 					if (!living.effectListComponent.ContainsEffectForEffectType(eEffect.Stun))
 					{
-						AttackAction attackAction = Body.attackComponent.attackAction;
+						WeaponAction weaponAction = Body.attackComponent.weaponAction;
 
-						if (attackAction != null && attackAction.NextTick - GameLoop.GameLoopTime <= 800 && CanWalk == false)
+						if (weaponAction != null && weaponAction.AttackRoundEndTime - GameLoop.GameLoopTime <= 800 && CanWalk == false)
 						{
 							Body.styleComponent.NextCombatStyle = null;
 							Body.styleComponent.NextCombatBackupStyle = null;
@@ -208,7 +193,7 @@ namespace DOL.AI.Brain
 		}
 		private int WalkSide(ECSGameTimer timer)
 		{
-			if (Body.IsAlive && HasAggro && Body.TargetObject != null && Body.IsWithinRadius(Body.TargetObject, Body.AttackRange))
+			if (Body.IsAlive && HasAggro && Body.TargetObject != null && Body.IsWithinRadius(Body.TargetObject, Body.attackComponent.AttackRange))
 			{
 				if (Body.TargetObject is GameLiving)
 				{
@@ -216,7 +201,6 @@ namespace DOL.AI.Brain
 					float angle = living.GetAngle(Body);
 					Point2D positionalPoint;
 					positionalPoint = living.GetPointFromHeading((ushort)(living.Heading + (90 * (4096.0 / 360.0))), 65);
-					//Body.WalkTo(positionalPoint.X, positionalPoint.Y, living.Z, 280);
 					Body.X = positionalPoint.X;
 					Body.Y = positionalPoint.Y;
 					Body.Z = living.Z;
@@ -233,4 +217,3 @@ namespace DOL.AI.Brain
         }
 	}
 }
-

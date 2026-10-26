@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using DOL.Database;
 
@@ -8,9 +8,24 @@ namespace DOL.GS
 {
 	public class Spell : Skill, ICustomParamsValuable
 	{
-		protected readonly string m_description = "";
+		private static FrozenDictionary<eDamageType, string> _damageTypeToStringMap =
+			new Dictionary<eDamageType, string>()
+			{
+				{ eDamageType.Natural, "essence" },
+				{ eDamageType.Crush, "crush" },
+				{ eDamageType.Slash , "slash" },
+				{ eDamageType.Thrust , "thrust" },
+				{ eDamageType.Body , "body" },
+				{ eDamageType.Cold , "cold" },
+				{ eDamageType.Energy , "energy" },
+				{ eDamageType.Heat , "heat" },
+				{ eDamageType.Matter , "matter" },
+				{ eDamageType.Spirit , "spirit" }
+			}.ToFrozenDictionary();
+
+		protected readonly string m_description = string.Empty;
 		protected readonly eSpellTarget m_target = eSpellTarget.NONE;
-        protected readonly eSpellType m_spelltype;// = "-";
+		protected readonly eSpellType m_spelltype;
 		protected readonly int m_range = 0;
 		protected readonly int m_radius = 0;
 		protected double m_value = 0;
@@ -28,10 +43,10 @@ namespace DOL.GS
 		protected readonly int m_resmana = 0;
 		protected readonly int m_lifedrain_return = 0;
 		protected readonly int m_amnesia_chance = 0;
-		protected readonly string m_message1 = "";
-		protected readonly string m_message2 = "";
-		protected readonly string m_message3 = "";
-		protected readonly string m_message4 = "";
+		protected readonly string m_message1 = string.Empty;
+		protected readonly string m_message2 = string.Empty;
+		protected readonly string m_message3 = string.Empty;
+		protected readonly string m_message4 = string.Empty;
 		protected readonly ushort m_effectID = 0;
 		protected readonly int m_instrumentRequirement = 0;
 		protected readonly int m_spellGroup = 0;
@@ -42,7 +57,6 @@ namespace DOL.GS
 		protected readonly bool m_uninterruptible = false;
 		protected readonly bool m_isfocus = false;
         protected readonly bool m_minotaurspell = false;
-        private bool scaledToPetLevel = false;
         // warlocks
         protected readonly bool m_isprimary = false;
 		protected readonly bool m_issecondary = false;
@@ -53,18 +67,13 @@ namespace DOL.GS
 		protected bool m_isShearable = false;
 		// tooltip
 		protected ushort m_tooltipId = 0;
+
 		// params
-		protected Dictionary<string, List<string>> m_paramCache = null;
+		public Dictionary<string, object> CustomParamsDictionary { get; set; }
 
-		public Dictionary<string, List<string>> CustomParamsDictionary
-		{
-			get { return m_paramCache; }
-			set { m_paramCache = value; }
-		}
-
-        #region member access properties
-        #region warlocks
-        public bool IsPrimary
+		#region member access properties
+		#region warlocks
+		public bool IsPrimary
 		{
 			get { return m_isprimary; }
 		}
@@ -160,7 +169,6 @@ namespace DOL.GS
 		public eDamageType DamageType
 		{
 			get { return m_damageType; }
-
 		}
 
 		public virtual eSpellType SpellType
@@ -285,6 +293,8 @@ namespace DOL.GS
 			set { m_isShearable = value; }
 		}
 
+		public bool IsDynamic;
+
 		/// <summary>
 		/// Is this spell harmful?
 		/// </summary>
@@ -306,13 +316,19 @@ namespace DOL.GS
 		/// </summary>
 		public bool IsBuff => IsHelpful && (Duration > 0 || Concentration > 0);
 
+		public bool IsDebuff => IsHarmful && (Duration > 0 || Concentration > 0);
+
 		/// <summary>
 		/// Is this a healing spell?
 		/// </summary>
 		public bool IsHealing => SpellType switch
 		{
-			eSpellType.CurePoison or
+			eSpellType.CureAll or
 			eSpellType.CureDisease or
+			eSpellType.CureMezz or
+			eSpellType.CureNearsight or
+			eSpellType.CureNearsightCustom or
+			eSpellType.CurePoison or
 			eSpellType.CombatHeal or
 			eSpellType.Heal or
 			eSpellType.HealOverTime or
@@ -346,7 +362,7 @@ namespace DOL.GS
         }
 
         public Spell(DbSpell dbspell, int requiredLevel, bool minotaur)
-			: base(dbspell.Name, dbspell.SpellID, (ushort)dbspell.Icon, requiredLevel, dbspell.TooltipId)
+			: base(dbspell.Name, dbspell.SpellID, (ushort) dbspell.Icon, requiredLevel, dbspell.TooltipId)
 		{
 			m_description = dbspell.Description;
 			m_target = Enum.Parse<eSpellTarget>(dbspell.Target, true);
@@ -387,7 +403,10 @@ namespace DOL.GS
 			m_sharedtimergroup = dbspell.SharedTimerGroup;
 			m_minotaurspell = minotaur;
 			// Params
-			this.InitFromCollection(dbspell.CustomValues, param => param.KeyName, param => param.Value);
+			this.Init(dbspell.CustomValues, param => param.KeyName, param => param.Value);
+			this.PrewarmParamValue<ushort>(nameof(InternalIconID));
+			this.PrewarmParamList<int>(nameof(MultipleSubSpells));
+			this.PrewarmParamValue<bool>(nameof(AllowCoexisting));
 		}
 
 		/// <summary>
@@ -397,7 +416,7 @@ namespace DOL.GS
 		/// <param name="spell"></param>
 		/// <param name="spellType"></param>
 		public Spell(Spell spell, eSpellType spellType) :
-			base(spell.Name, spell.ID, (ushort)spell.Icon, spell.Level, spell.InternalID)
+			base(spell.Name, spell.ID, spell.Icon, spell.Level, spell.InternalID)
 		{
 			m_description = spell.Description;
 			m_target = spell.Target;
@@ -437,8 +456,8 @@ namespace DOL.GS
 			m_allowbolt = spell.AllowBolt;
 			m_sharedtimergroup = spell.SharedTimerGroup;
 			m_minotaurspell = spell.m_minotaurspell;
-            // Params
-			m_paramCache = new Dictionary<string, List<string>>(spell.m_paramCache);
+			// Params
+			CustomParamsDictionary = new(spell.CustomParamsDictionary);
 		}
 
 		/// <summary>
@@ -455,99 +474,38 @@ namespace DOL.GS
 		{
 			return (Spell)MemberwiseClone();
 		}
-		
-		/// <summary>
-		/// Fill in spell delve information.
-		/// </summary>
-		/// <param name="delve"></param>
-		public virtual void Delve(List<string> delve)
-		{
-			delve.Add($"Function: {Name}");
-			delve.Add("");
-			delve.Add(Description);
-			delve.Add("");
-			DelveEffect(delve);
-			DelveTarget(delve);
-
-			if (Range > 0)
-				delve.Add(string.Format("Range: {0}", Range));
-
-			if (Duration is > 0 and < 65535)
-				delve.Add(string.Format("Duration: {0}", Duration >= 60000 ? $"{Duration / 60000}:{Duration % 6000} min" : $"{Duration / 100} sec"));
-
-			delve.Add(string.Format("Casting time: {0}", CastTime == 0 ? "instant" : $"{CastTime} sec"));
-
-			if (Target is eSpellTarget.ENEMY or eSpellTarget.AREA or eSpellTarget.CONE)
-				delve.Add(string.Format("Damage: {0}", GlobalConstants.DamageTypeToName(DamageType)));
-
-			delve.Add("");
-		}
-
-		private void DelveEffect(List<string> delve)
-		{
-		}
-
-		private void DelveTarget(List<string> delve)
-		{
-			string target;
-
-			switch (Target)
-			{
-				case eSpellTarget.ENEMY:
-				{
-					target = "Targeted";
-					break;
-				}
-				default:
-				{
-					target = Target.ToString();
-					target = target[0] + target[1..].ToLower();
-					break;
-				}
-			}
-
-			delve.Add($"Target: {target}");
-		}
 
 		#region Spell Helpers
 
-		public bool IsPoison
-		{
-			get
-			{
-				switch (ID)
-				{
-					case 30000:
-					case 30004:
-					case 30009:
-					case 30014:
-					case 30019:
-					case 30024:
-					case 30029:
-					case 30034:
-					case 30039:
-					case 30044:
-					case 30049:
-						return true;
-					default:
-						return false;
-				}
-			}
-		}
-		
+		public bool IsSnare => SpellType is
+			eSpellType.SpeedDecrease or
+			eSpellType.StyleSpeedDecrease or
+			eSpellType.UnbreakableSpeedDecrease or
+			eSpellType.PreventFlight or
+			eSpellType.DamageSpeedDecrease or
+			eSpellType.HereticSpeedDecrease or
+			eSpellType.DamageSpeedDecreaseNoVariance or
+			eSpellType.HereticDamageSpeedDecrease or
+			eSpellType.VampSpeedDecrease or
+			eSpellType.WarlockSpeedDecrease;
+
 		public bool IsPoisonEffect
 		{
 			get
 			{
 				switch (ID)
 				{
+					case 8096: // Weak Essence of Weariness
+					case 8097: // Essence of Weariness
+					case 8100: // Weak Essence of Lethargy
+					case 8101: // Essence of Lethargy
 					case 30000: // Minor Lethal Poison
 					case 30001: // Minor Weakening Poison
 					case 30002: // Minor Imbalancing Poison
 					case 30003: // Minor Infectious Serum
 					case 30004: // Lesser Lethal Poison
 					case 30005: // Lesser Weakening Poison
-					// case 30006: // Lethal Strike
+					case 30006: // Lethal Strike
 					case 30007: // Lesser Imbalancing Poison
 					case 30008: // Lethal Poison
 					case 30009: // Major Weakening Poison
@@ -574,14 +532,10 @@ namespace DOL.GS
 					case 30046: // Greater Enervating Poison
 					case 30047: // Greater Infectious Serum
 					case 30049: // Lifebane
-					case 30050: // Weak Essence of Lethargy
-					case 30051: // Essence of Lethargy
-					case 30052: // Weak Essence of Weariness
-					case 30053: // Essence of Weariness
-					case 300211: // Greater Enervating Poison
-					case 300281: // Major Enervating Poison
-					case 300411: // Lesser Enervating Poison
-					case 300461: // Minor Enervating Poison
+					case 300211: // Minor Enervating Poison
+					case 300281: // Lesser Enervating Poison
+					case 300311: // Major Enervating Poison
+					case 300461: // Greater Enervating Poison
 						return true;
 					default:
 						return false;
@@ -706,7 +660,7 @@ namespace DOL.GS
         {
         	get
         	{
-        		return Pulse != 0 && !IsFocus;
+        		return IsPulsing && !IsFocus;
         	}
         }
 
@@ -721,37 +675,53 @@ namespace DOL.GS
         	}
         }
 
-		
-        #endregion
+		#endregion
 		#region utils
 
 		public ushort InternalIconID
 		{
 			get
 			{
-				return this.GetParamValue<ushort>("InternalIconID");
+				_ = this.TryGetParamSingle(nameof(InternalIconID), out ushort result);
+				return result;
 			}
 		}
-		
+
 		public IList<int> MultipleSubSpells
 		{
 			get
 			{
-				return this.GetParamValues<int>("MultipleSubSpellID").Where(id => id > 0).ToList();
+				if (CustomParamsExtensions.IsSuccessfulRetrieval(this.TryGetParamList(nameof(MultipleSubSpells), out List<int> result)))
+					return result;
+				else
+					return Array.Empty<int>();
 			}
 		}
-		
+
 		public bool AllowCoexisting
 		{
 			get
 			{
-				return this.GetParamValue<bool>("AllowCoexisting");
+				_ = this.TryGetParamSingle(nameof(AllowCoexisting), out bool result);
+				return result;
 			}
 		}
 
-        public bool ScaledToPetLevel { get => scaledToPetLevel; set => scaledToPetLevel = value; }
+		public int CalculateEffectiveRange(GameLiving caster)
+		{
+			return caster.castingComponent.CalculateSpellRange(this);
+		}
 
-        #endregion
-    }
-	
+		public bool RequiresLosCheck()
+		{
+			return Target is not eSpellTarget.SELF and not eSpellTarget.GROUP and not eSpellTarget.CONE and not eSpellTarget.PET && Range > 0;
+		}
+
+		public string DamageTypeToString()
+		{
+			return _damageTypeToStringMap.TryGetValue(DamageType, out string result) ? result : $"<{DamageType}>";
+		}
+
+		#endregion
+	}
 }

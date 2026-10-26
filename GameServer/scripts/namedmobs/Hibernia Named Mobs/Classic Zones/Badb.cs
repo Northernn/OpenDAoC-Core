@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 70;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -70,8 +63,7 @@ namespace DOL.GS
 			Model = 1883;
 			Level = 70;
 			Size = 50;
-			MaxDistance = 2500;
-			TetherRange = 2600;			
+			TetherRange = 2600;
 
 			GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
 			template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 468, 0, 0);
@@ -88,22 +80,22 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC adds in GetNPCsInRadius(8000))
 			{
 				if (adds != null && adds.IsAlive && adds.Brain is BadbWraithBrain)
 					adds.RemoveFromWorld();
 			}
-			base.Die(killer);
-        }		
+			base.ProcessDeath(killer);
+        }
 	}
 }
 namespace DOL.AI.Brain
 {
 	public class BadbBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public BadbBrain() : base()
 		{
 			AggroLevel = 100;
@@ -236,12 +228,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Voices of Pain";
 					spell.Range = 1500;
 					spell.SpellID = 11874;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_BadbDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_BadbDD);
 				}
 				return m_BadbDD;
 			}
@@ -268,10 +259,7 @@ namespace DOL.GS
 				default: return 15;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override int MaxHealth
 		{
 			get { return 2200; }
@@ -309,7 +297,7 @@ namespace DOL.AI.Brain
 {
 	public class BadbWraithBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public BadbWraithBrain() : base()
 		{
 			AggroLevel = 100;

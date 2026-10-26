@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -71,10 +64,8 @@ namespace DOL.GS
 			Model = 767;
 			Size = 120;
 			Level = 65;
-			MaxDistance = 2500;
 			TetherRange = 2600;
 			Faction = FactionMgr.GetFactionByID(96);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 			MaxSpeedBase = 280;
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
@@ -85,22 +76,23 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(2500))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is CorruptorBodyguardBrain)
 					npc.RemoveFromWorld();
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
     }
 }
+
 namespace DOL.AI.Brain
 {
 	public class KontarCorruptBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public KontarCorruptBrain() : base()
 		{
 			AggroLevel = 100;
@@ -172,10 +164,7 @@ namespace DOL.GS
 				default: return 15;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override int MaxHealth
 		{
 			get { return 2000; }
@@ -207,10 +196,8 @@ namespace DOL.GS
 			Size = (byte)Util.Random(35, 45);
 			RespawnInterval = -1;
 			RoamingRange = 200;
-			MaxDistance = 2500;
 			TetherRange = 2600;
 			Faction = FactionMgr.GetFactionByID(96);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
 
 			LoadedFromScript = true;
 			CorruptorBodyguardBrain sbrain = new CorruptorBodyguardBrain();
@@ -246,23 +233,23 @@ namespace DOL.GS
 					spell.Range = 500;
 					spell.Radius = 300;
 					spell.SpellID = 11907;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_CorruptorBodyguardDD = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_CorruptorBodyguardDD);
 				}
 				return m_CorruptorBodyguardDD;
 			}
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class CorruptorBodyguardBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public CorruptorBodyguardBrain() : base()
 		{
 			AggroLevel = 100;
@@ -307,12 +294,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Corruptor Bodyguard's Heal";
 					spell.Range = 1500;
 					spell.SpellID = 11906;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = eSpellType.Heal.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_CorruptorBodyguardHeal = new Spell(spell, 50);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_CorruptorBodyguardHeal);
 				}
 				return m_CorruptorBodyguardHeal;
 			}

@@ -1,24 +1,6 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
+using System.Threading;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.GS.Commands;
@@ -34,9 +16,10 @@ namespace DOL.GS
 	/// </summary>
 	public class GameSiegeWeapon : GameMovingObject
 	{
-		public GameSiegeWeapon()
+		public bool EnableToMove { get; set; }
+
+		public GameSiegeWeapon() : base(new BlankBrain())
 		{
-			SetOwnBrain(new BlankBrain());
 			this.Realm = 0;
 			Level = 1;
 			CurrentState = eState.Inactive;
@@ -51,7 +34,7 @@ namespace DOL.GS
 					5000,//loading
 					0//fireing
 				};//en ms
-			m_enableToMove = true;
+			EnableToMove = true;
 			MaxSpeedBase = 50;
 			MinAttackRange = -1;
 			MaxAttackRange = -1;
@@ -163,13 +146,13 @@ namespace DOL.GS
 		/// <summary>
 		/// The lock object for lazy regen timers initialization
 		/// </summary>
-		protected readonly object m_decayTimerLock = new object();
+		protected readonly Lock _decayTimerLock = new();
 
 		protected ECSGameTimer m_controlRangeTimer;
 		/// <summary>
 		/// The lock object for controlcheck timers initialization
 		/// </summary>
-		protected readonly object m_controlRangeTimerLock = new object();
+		protected readonly Lock _controlRangeTimerLock = new();
 
 		private ushort m_ammoSlot;
 		public ushort AmmoSlot
@@ -246,7 +229,7 @@ namespace DOL.GS
 			player.Out.SendMessage("You take control of " + GetName(0, false) + ".", eChatType.CT_Say, eChatLoc.CL_SystemWindow);
 			StartControlRangeCheck();
 			if ((CurrentState & GameSiegeWeapon.eState.Armed) != GameSiegeWeapon.eState.Armed)
-				Arm();
+				Arm(false);
 
 		}
 		public virtual void ReleaseControl()
@@ -316,23 +299,29 @@ namespace DOL.GS
 			}
 		}
 
-		public void Arm()
+		public int Arm(bool isAutoArm)
 		{
-			if (!CanUse()) return;
+			if (!CanUse())
+				return 0;
+
 			CurrentState &= ~eState.Armed;
 			SiegeWeaponTimer.CurrentAction = SiegeTimer.eAction.Arming;
-			PreAction();
-			if (Owner != null)
-			{//You prepare the cauldron of boiling oil for firing. (15.0s until armed)
-				Owner.Out.SendMessage("You prepare " + GetName(0, false) + " for firing. (" + (GetActionDelay(SiegeTimer.eAction.Arming) / 1000).ToString("N") + "s until armed)", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-			}
+			int delay = GetActionDelay(SiegeTimer.eAction.Arming);
 
+			if (isAutoArm)
+				UpdateClientInterface();
+			else
+				PreAction();
+
+			Owner?.Out.SendMessage($"You prepare {GetName(0, false)} for firing. ({delay / 1000:N}s until armed)", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+			return delay;
 		}
+
 		public void Move()
 		{
 			if (!CanUse()) return;
-			if (!m_enableToMove) return;
-			if (Owner == null || Owner.GroundTarget == null) return;
+			if (!EnableToMove) return;
+			if (Owner == null || !Owner.GroundTarget.IsValid) return;
             if ( !this.IsWithinRadius( Owner.GroundTarget, 1000 ) )
 			{
 				Owner.Out.SendMessage("Ground target is too far away to move to!", eChatType.CT_System,
@@ -355,7 +344,7 @@ namespace DOL.GS
 			}
    
 			//let's check if we are trying to move too close to a door, if we are, don't move
-			foreach (GameDoorBase door in Owner.CurrentRegion.GetDoorsInRadius(Owner.GroundTarget, (ushort)(AttackRange - 50)))
+			foreach (GameDoorBase door in Owner.CurrentRegion.GetDoorsInRadius(Owner.GroundTarget, (ushort)(attackComponent.AttackRange - 50)))
 			{
 				if (door is GameKeepDoor)
 				{
@@ -365,9 +354,9 @@ namespace DOL.GS
 			}
    
 			//unarmed & unaim siege weapon
-			CurrentState &= ~eState.Armed;
-			TargetObject = null;
-			CurrentState &= ~eState.Aimed;
+			CurrentState = eState.Inactive;
+			SiegeWeaponTimer.Stop();
+			Owner.Out.SendSiegeWeaponInterface(this, 0);
 			WalkTo(Owner.GroundTarget, 100);
 		}
 
@@ -411,7 +400,7 @@ namespace DOL.GS
 			}
 			if (TargetObject != null)
 				SetGroundTarget(TargetObject.X, TargetObject.Y, TargetObject.Z);
-			if (GroundTarget == null)
+			if (!GroundTarget.IsValid)
 				return;
 
 			//Range Checks
@@ -430,7 +419,7 @@ namespace DOL.GS
 			BroadcastFireAnimation(GetActionDelay(SiegeTimer.eAction.Fire));
 			if (Owner != null)
 				Owner.Out.SendMessage("You fire " + GetName(0, false) + "!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-			Arm();
+			Arm(false);
 		}
 
 		private int MakeDelayedDamage(ECSGameTimer callingTimer)
@@ -497,15 +486,11 @@ namespace DOL.GS
 			}
 		}
 
-		public void salvage()
+		public void Salvage()
 		{
-			if (Owner.GetCraftingSkillValue(eCraftingSkill.SiegeCrafting) == -1)
-			{
-				Owner.Out.SendMessage("You must be a Siege weapon crafter to salvage it.", eChatType.CT_Say, eChatLoc.CL_SystemWindow);
-				return;
-			}
-			Owner.SalvageSiegeWeapon(this);
+			GS.Salvage.BeginWork(Owner, this);
 		}
+
 		#endregion
 		#region private methods
 		private void BroadcastAnimation()
@@ -525,16 +510,15 @@ namespace DOL.GS
 		}
 		protected int[] ActionDelay;
 		private ushort m_effect;
-		private bool m_enableToMove;
 
-		/// <summary>
-		/// delay to do action in Ms
-		/// </summary>
-		/// <param name="action"></param>
-		/// <returns></returns>
-		public int GetActionDelay(SiegeTimer.eAction action)
+        /// <summary>
+        /// delay to do action in Ms
+        /// </summary>
+        /// <param name="action"></param>
+        /// <returns></returns>
+        public int GetActionDelay(SiegeTimer.eAction action)
 		{
-			if (action == SiegeTimer.eAction.Fire && GroundTarget != null)
+			if (action == SiegeTimer.eAction.Fire && GroundTarget.IsValid)
                 return (int)( ActionDelay[(int)action] + this.GetDistanceTo( GroundTarget ) );
 			
 			int delay = ActionDelay[(int)action];
@@ -554,7 +538,7 @@ namespace DOL.GS
 			if (Owner == null)
 				return false;
 			Owner.Stealth(false);
-			if (!Owner.IsAlive || Owner.IsMezzed || Owner.IsStunned)
+			if (Owner.IsIncapacitated)
 			{
 				this.Owner.Out.SendMessage("You can't use this siegeweapon now!", eChatType.CT_Say, eChatLoc.CL_SystemWindow);
 				return false;
@@ -585,17 +569,26 @@ namespace DOL.GS
 			if (SiegeWeaponTimer.IsAlive)
 			{
 				SiegeWeaponTimer.Stop();
-				if (Owner != null)
-					Owner.Out.SendSiegeWeaponCloseInterface();
+				Owner?.Out.SendSiegeWeaponCloseInterface();
 			}
+
 			SiegeWeaponTimer.Start(GetActionDelay(SiegeWeaponTimer.CurrentAction));
+			UpdateClientInterface();
+		}
+
+		private void UpdateClientInterface()
+		{
 			if (Owner != null)
 			{
-				if(this is GameSiegeRam) //Ram Siege Interface is 2 seconds fast for some reason. adding 2 seconds to the action delay for rams
-					Owner.Out.SendSiegeWeaponInterface(this, (GetActionDelay(SiegeWeaponTimer.CurrentAction) + 2000) / 100);
-				else
-				Owner.Out.SendSiegeWeaponInterface(this, GetActionDelay(SiegeWeaponTimer.CurrentAction) / 100);
+				int actionDelay = GetActionDelay(SiegeWeaponTimer.CurrentAction) / 100;
+
+				// Ram siege interface is 2 seconds faster for some reason. Adding 2 seconds to the action delay.
+				if (this is GameSiegeRam)
+					actionDelay += 20;
+
+				Owner.Out.SendSiegeWeaponInterface(this, actionDelay);
 			}
+
 			BroadcastAnimation();
 		}
 
@@ -603,7 +596,7 @@ namespace DOL.GS
 		{
 			if (ObjectState != eObjectState.Active)
 				return;
-			lock (m_controlRangeTimerLock)
+			lock (_controlRangeTimerLock)
 			{
 				if (m_controlRangeTimer == null)
 				{
@@ -618,7 +611,7 @@ namespace DOL.GS
 
 		private void StopControlRangeCheck()
 		{
-			lock (m_controlRangeTimerLock)
+			lock (_controlRangeTimerLock)
 			{
 				if (m_controlRangeTimer == null)
 					return;
@@ -648,14 +641,12 @@ namespace DOL.GS
 			//todo check if bullet
 			return base.ReceiveItem(source, item);
 		}
-		public override void TakeDamage(GameObject source, eDamageType damageType, int damageAmount, int criticalAmount)
+
+		public override void ModifyAttack(AttackData attackData)
 		{
-			if (source is GamePlayer)
-			{
-				damageAmount /= 30;
-				criticalAmount /= 30;
-			}
-			base.TakeDamage(source, damageType, damageAmount, criticalAmount);
+			attackData.Damage /= 30;
+			attackData.StyleDamage /= 30;
+			attackData.CriticalDamage /= 30;
 		}
 
 		public override bool Interact(GamePlayer player)
@@ -679,12 +670,6 @@ namespace DOL.GS
             this.ExamineArticle = item.ExamineArticle;
             this.MessageArticle = item.MessageArticle;
 			this.Model = (ushort)item.Model;
-		}
-
-		public bool EnableToMove
-		{
-			set { m_enableToMove = value; }
-			get { return m_enableToMove; }
 		}
 
 		public override bool AddToWorld()
@@ -712,7 +697,7 @@ namespace DOL.GS
 		{
 			if (ObjectState != eObjectState.Active)
 				return;
-			lock (m_decayTimerLock)
+			lock (_decayTimerLock)
 			{
 				if (m_decayTimer == null)
 				{
@@ -727,7 +712,7 @@ namespace DOL.GS
 
 		private void StopDecay()
 		{
-			lock (m_decayTimerLock)
+			lock (_decayTimerLock)
 			{
 				if (m_decayTimer == null)
 					return;
@@ -797,38 +782,29 @@ namespace DOL.GS
 		{
 			if (SiegeWeapon.Owner == null)
 				return 0;
+
 			switch (CurrentAction)
 			{
 				case eAction.Arming:
-					{
-						SiegeWeapon.Armed();
-						break;
-					}
+					SiegeWeapon.Armed();
+					break;
 				case eAction.Aiming:
-					{
-						SiegeWeapon.Aimed();
-						break;
-					}
+					SiegeWeapon.Aimed();
+					break;
 				case eAction.Loading:
-					{
-						//todo set ammo
-						break;
-					}
+					//todo set ammo
+					break;
 				case eAction.Fire:
-					{
-						SiegeWeapon.DoDamage();
-						break;
-					}
+					SiegeWeapon.DoDamage();
+					break;
 				default: break;
 			}
 
-			if (SiegeWeapon.Owner != null)
-			{
-				SiegeWeapon.Owner.Out.SendSiegeWeaponInterface(this.SiegeWeapon, 0);
-			}
+			SiegeWeapon.Owner?.Out.SendSiegeWeaponInterface(this.SiegeWeapon, 0);
+
 			if ((SiegeWeapon.CurrentState & GameSiegeWeapon.eState.Armed) != GameSiegeWeapon.eState.Armed)
-				SiegeWeapon.Arm();
-			
+				return SiegeWeapon.Arm(true);
+
 			return 0;
 		}
 	}

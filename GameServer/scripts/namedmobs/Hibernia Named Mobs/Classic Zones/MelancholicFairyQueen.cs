@@ -27,15 +27,8 @@ namespace DOL.GS
 				default: return 70;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -65,18 +58,15 @@ namespace DOL.GS
 		public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
 		public override short Strength { get => base.Strength; set => base.Strength = 200; }
 		#endregion
-		public static bool IsKilled = false;
 		public override bool AddToWorld()
 		{			
 			Name = "Melancholic Fairy Queen";
 			Model = 679;
 			Level = (byte)Util.Random(64,68);
 			Size = 50;
-			MaxDistance = 2500;
 			TetherRange = 2600;
 			Flags = eFlags.FLYING;
 			MaxSpeedBase = 250;
-			IsKilled = false;
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			MelancholicFairyQueenBrain sbrain = new MelancholicFairyQueenBrain();
@@ -86,23 +76,22 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
-			IsKilled = true;
 			foreach (GameNPC adds in GetNPCsInRadius(8000))
 			{
 				if (adds != null && adds.IsAlive && adds.Brain is MFQGuardsBrain)
 					adds.RemoveFromWorld();
 			}
-			base.Die(killer);
-        }      
+			base.ProcessDeath(killer);
+        }
 	}
 }
 namespace DOL.AI.Brain
 {
 	public class MelancholicFairyQueenBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public MelancholicFairyQueenBrain() : base()
 		{
 			AggroLevel = 100;
@@ -114,7 +103,7 @@ namespace DOL.AI.Brain
 		bool changed;
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
 			}
@@ -209,12 +198,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Heat Beam";
 					spell.Range = 1500;
 					spell.SpellID = 11896;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_MFQDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_MFQDD);
 				}
 				return m_MFQDD;
 			}
@@ -241,10 +229,7 @@ namespace DOL.GS
 				default: return 15;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override int MaxHealth
 		{
 			get { return 2200; }
@@ -282,7 +267,7 @@ namespace DOL.AI.Brain
 {
 	public class MFQGuardsBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public MFQGuardsBrain() : base()
 		{
 			AggroLevel = 100;

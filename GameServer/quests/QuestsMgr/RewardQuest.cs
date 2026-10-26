@@ -33,7 +33,7 @@ namespace DOL.GS.Quests
 	/// <author>Aredhel</author>
 	public class RewardQuest : BaseQuest
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		private GameNPC m_questGiver;
 		private List<QuestGoal> m_goals;
@@ -645,7 +645,7 @@ namespace DOL.GS.Quests
 			public int ExperiencePercent(GamePlayer player)
 			{
 				int currentLevel = player.Level;
-				if (currentLevel > player.MaxLevel)
+				if (currentLevel > GamePlayer.MAX_LEVEL)
 					return 0;
 				long experienceToLevel = player.GetExperienceNeededForLevel(currentLevel + 1) -
 					player.GetExperienceNeededForLevel(currentLevel);

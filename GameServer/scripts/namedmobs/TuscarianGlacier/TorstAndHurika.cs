@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.GS;
+using DOL.GS.Movement;
 using DOL.GS.PacketHandler;
 
 #region Torst
@@ -13,6 +14,21 @@ namespace DOL.GS
         public Torst() : base()
         {
         }
+
+        private const short PATROL_SPEED = 200;
+
+        // Flying patrol route, starting at the spawn point.
+        private static readonly (int X, int Y, int Z)[] _patrolPoints =
+        [
+            (50897, 36006, 16659),
+            (51166, 37442, 17331),
+            (53201, 39956, 16314),
+            (55178, 38616, 17901),
+            (54852, 36185, 17859),
+            (53701, 35635, 17859),
+            (52118, 36114, 17265)
+        ];
+
         public override int GetResist(eDamageType damageType)
         {
             switch (damageType)
@@ -23,15 +39,8 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -52,10 +61,6 @@ namespace DOL.GS
         {
             get { return 100000; }
         }
-        public override void ReturnToSpawnPoint(short speed)
-        {
-            return;
-        }
         #region Stats
         public override short Charisma { get => base.Charisma; set => base.Charisma = 200; }
         public override short Piety { get => base.Piety; set => base.Piety = 200; }
@@ -72,10 +77,10 @@ namespace DOL.GS
             Size = 90;
             Model = 696;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             MaxSpeedBase = 250;
             Flags = eFlags.FLYING;
             RespawnInterval =ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
+            CurrentPathPoint = MovementMgr.CreatePath(EPathType.Loop, PATROL_SPEED, _patrolPoints);
 
             TorstBrain sbrain = new TorstBrain();
             SetOwnBrain(sbrain);
@@ -84,14 +89,14 @@ namespace DOL.GS
             base.AddToWorld();
             return true;
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC npc in GetNPCsInRadius(5000))
             {
                 if (npc != null && npc.IsAlive && npc.Brain is TorstEddiesBrain)
                     npc.RemoveFromWorld();
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public override void OnAttackEnemy(AttackData ad) //on enemy actions
         {
@@ -120,13 +125,12 @@ namespace DOL.GS
                     spell.Range = 500;
                     spell.Radius = 400;
                     spell.SpellID = 11743;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "DirectDamageNoVariance";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_TorstDD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_TorstDD);
                 }
                 return m_TorstDD;
             }
@@ -138,7 +142,7 @@ namespace DOL.AI.Brain
 {
     public class TorstBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public TorstBrain()
             : base()
@@ -149,126 +153,10 @@ namespace DOL.AI.Brain
         }
 
         public List<GamePlayer> PlayersToAttack = new List<GamePlayer>();
-        public static bool point1check = false;
-        public static bool point2check = false;
-        public static bool point3check = false;
-        public static bool point4check = false;
-        public static bool point5check = false;
-        public static bool point6check = false;
-        public static bool walkback = false;
-
-        #region Torst Flying Path
-        public void TorstFlyingPath()
-        {
-            Point3D point1 = new Point3D();
-            point1.X = 51166;
-            point1.Y = 37442;
-            point1.Z = 17331;
-            Point3D point2 = new Point3D();
-            point2.X = 53201;
-            point2.Y = 39956;
-            point2.Z = 16314;
-            Point3D point3 = new Point3D();
-            point3.X = 55178;
-            point3.Y = 38616;
-            point3.Z = 17901;
-            Point3D point4 = new Point3D();
-            point4.X = 54852;
-            point4.Y = 36185;
-            point4.Z = 17859;
-            Point3D point5 = new Point3D();
-            point5.X = 53701;
-            point5.Y = 35635;
-            point5.Z = 17859;
-            Point3D point6 = new Point3D();
-            point6.X = 52118;
-            point6.Y = 36114;
-            point6.Z = 17265;
-            Point3D spawn = new Point3D();
-            spawn.X = 50897;
-            spawn.Y = 36006;
-            spawn.Z = 16659;
-
-            if (!Body.InCombat && !HasAggro)
-            {
-                if (!Body.IsWithinRadius(point1, 30) && point1check == false)
-                {
-                    Body.WalkTo(point1, 200);
-                }
-                else
-                {
-                    point1check = true;
-                    walkback = false;
-                    if (!Body.IsWithinRadius(point2, 30) && point1check == true && point2check == false)
-                    {
-                        Body.WalkTo(point2, 200);
-                    }
-                    else
-                    {
-                        point2check = true;
-                        if (!Body.IsWithinRadius(point3, 30) && point1check == true && point2check == true &&
-                            point3check == false)
-                        {
-                            Body.WalkTo(point3, 200);
-                        }
-                        else
-                        {
-                            point3check = true;
-                            if (!Body.IsWithinRadius(point4, 30) && point1check == true && point2check == true &&
-                                point3check == true && point4check == false)
-                            {
-                                Body.WalkTo(point4, 200);
-                            }
-                            else
-                            {
-                                point4check = true;
-                                if (!Body.IsWithinRadius(point5, 30) && point1check == true &&
-                                    point2check == true && point3check == true && point4check == true &&
-                                    point5check == false)
-                                {
-                                    Body.WalkTo(point5, 200);
-                                }
-                                else
-                                {
-                                    point5check = true;
-                                    if (!Body.IsWithinRadius(point6, 30) && point1check == true &&
-                                        point2check == true && point3check == true && point4check == true &&
-                                        point5check == true && point6check == false)
-                                    {
-                                        Body.WalkTo(point6, 200);
-                                    }
-                                    else
-                                    {
-                                        point6check = true;
-                                        if (!Body.IsWithinRadius(spawn, 30) && point1check == true &&
-                                            point2check == true && point3check == true && point4check == true &&
-                                            point5check == true && point6check == true && walkback == false)
-                                        {
-                                            Body.WalkTo(spawn, 200);
-                                        }
-                                        else
-                                        {
-                                            walkback = true;
-                                            point1check = false;
-                                            point2check = false;
-                                            point3check = false;
-                                            point4check = false;
-                                            point5check = false;
-                                            point6check = false;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        #endregion
 
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -277,16 +165,13 @@ namespace DOL.AI.Brain
         private bool RemoveAdds = false;
         public override void Think()
         {
-            TorstFlyingPath();
-            if (CheckProximityAggro() && Body.IsWithinRadius(Body.TargetObject, Body.AttackRange) && Body.InCombat)
+            if (CheckProximityAggro() && Body.IsWithinRadius(Body.TargetObject, Body.attackComponent.AttackRange) && Body.InCombat)
             {
                 Body.Flags = 0; //dont fly
             }
 
             if (!CheckProximityAggro())
             {
-                //set state to RETURN TO SPAWN
-                FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
                 Body.Health = Body.MaxHealth;
                 Body.Flags = GameNPC.eFlags.FLYING; //fly
                 SpawnEddies = false;
@@ -366,10 +251,10 @@ namespace DOL.AI.Brain
                     if (target.effectListComponent.ContainsEffectForEffectType(eEffect.MovementSpeedDebuff)) //if target got root
                     {
                         Body.StopAttack();
-                        AggroList.Clear(); //clear aggro list
+                        ClearAggroList();
                         if (RandomTarget != null && RandomTarget.IsAlive)
                         {
-                            AggroList.TryAdd(RandomTarget, new(50)); //add to aggro list our new random target
+                            AddToAggroList(RandomTarget);
                             Body.StartAttack(RandomTarget);
                         }
                     }
@@ -395,13 +280,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Torst Root";
                     spell.TooltipId = 277;
                     spell.SpellID = 11742;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "SpeedDecrease";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int) eDamageType.Cold;
                     m_TorstRoot = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_TorstRoot);
                 }
                 return m_TorstRoot;
             }
@@ -420,6 +304,18 @@ namespace DOL.GS
         {
         }
 
+        private const short PATROL_SPEED = 200;
+
+        // Flying patrol route in Tuscaran Glacier.
+        private static readonly (int X, int Y, int Z)[] _patrolPoints =
+        [
+            (54652, 36348, 18279),
+            (55113, 38549, 16679),
+            (53370, 40527, 16268),
+            (51711, 38978, 17130),
+            (51519, 37213, 17046)
+        ];
+
         public override int GetResist(eDamageType damageType)
         {
             switch (damageType)
@@ -431,21 +327,7 @@ namespace DOL.GS
             }
         }
 
-        public override void ReturnToSpawnPoint(short speed)
-        {
-            return;
-        }
-
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+        public override int MeleeAttackRange => 350;
 
         public override bool HasAbility(string keyName)
         {
@@ -480,17 +362,12 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60162284);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             Flags = eFlags.FLYING;
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
+
+            if (CurrentRegionID == 160) //tuscaran glacier, mob will not roam elsewhere
+                CurrentPathPoint = MovementMgr.CreatePath(EPathType.Loop, PATROL_SPEED, _patrolPoints);
 
             HurikaBrain sbrain = new HurikaBrain();
             SetOwnBrain(sbrain);
@@ -506,8 +383,7 @@ namespace DOL.AI.Brain
 {
     public class HurikaBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public HurikaBrain()
             : base()
@@ -517,123 +393,30 @@ namespace DOL.AI.Brain
             ThinkInterval = 2000;
         }
 
-        public static bool point_1 = false;
-        public static bool point_2 = false;
-        public static bool point_3 = false;
-        public static bool point_4 = false;
-        public static bool point_5 = false;
-
-        #region Hurika Flying Path
-        public void HurikaFlyingPath()
-        {
-            Point3D point1 = new Point3D();
-            point1.X = 54652;
-            point1.Y = 36348;
-            point1.Z = 18279;
-            Point3D point2 = new Point3D();
-            point2.X = 55113;
-            point2.Y = 38549;
-            point2.Z = 16679;
-            Point3D point3 = new Point3D();
-            point3.X = 53370;
-            point3.Y = 40527;
-            point3.Z = 16268;
-            Point3D point4 = new Point3D();
-            point4.X = 51711;
-            point4.Y = 38978;
-            point4.Z = 17130;
-            Point3D point5 = new Point3D();
-            point5.X = 51519;
-            point5.Y = 37213;
-            point5.Z = 17046;
-
-            if (!Body.InCombat && !HasAggro)
-            {
-                if (Body.CurrentRegionID == 160) //tuscaran glacier
-                {
-                    if (!Body.IsWithinRadius(point1, 30) && point_1 == false)
-                    {
-                        Body.WalkTo(point1, 200);
-                    }
-                    else
-                    {
-                        point_1 = true;
-                        point_5 = false;
-                        if (!Body.IsWithinRadius(point2, 30) && point_1 == true && point_2 == false)
-                        {
-                            Body.WalkTo(point2, 200);
-                        }
-                        else
-                        {
-                            point_2 = true;
-                            if (!Body.IsWithinRadius(point3, 30) && point_1 == true && point_2 == true &&
-                                point_3 == false)
-                            {
-                                Body.WalkTo(point3, 200);
-                            }
-                            else
-                            {
-                                point_3 = true;
-                                if (!Body.IsWithinRadius(point4, 30) && point_1 == true && point_2 == true &&
-                                    point_3 == true && point_4 == false)
-                                {
-                                    Body.WalkTo(point4, 200);
-                                }
-                                else
-                                {
-                                    point_4 = true;
-                                    if (!Body.IsWithinRadius(point5, 30) && point_1 == true && point_2 == true &&
-                                        point_3 == true && point_4 == true && point_5 == false)
-                                    {
-                                        Body.WalkTo(point5, 200);
-                                    }
-                                    else
-                                    {
-                                        point_5 = true;
-                                        point_1 = false;
-                                        point_2 = false;
-                                        point_3 = false;
-                                        point_4 = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else //not TG
-                {
-                    //mob will not roam
-                }
-            }
-        }
-        #endregion
         public List<GamePlayer> Port_Enemys = new List<GamePlayer>();
-        public static bool IsTargetPicked = false;
-        public static GamePlayer randomtarget = null;
-        public static GamePlayer RandomTarget
+        public bool IsTargetPicked = false;
+        public GamePlayer randomtarget = null;
+        public GamePlayer RandomTarget
         {
             get { return randomtarget; }
             set { randomtarget = value; }
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
         public override void Think()
         {
-            HurikaFlyingPath();
-            if (CheckProximityAggro() && Body.IsWithinRadius(Body.TargetObject, Body.AttackRange) && Body.InCombat)
+            if (CheckProximityAggro() && Body.IsWithinRadius(Body.TargetObject, Body.attackComponent.AttackRange) && Body.InCombat)
             {
                 Body.Flags = 0; //dont fly
             }
 
             if (!CheckProximityAggro())
             {
-                //set state to RETURN TO SPAWN
-                FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
                 Body.Health = Body.MaxHealth;
                 Body.Flags = GameNPC.eFlags.FLYING; //fly
                 IsTargetPicked = false;
@@ -705,10 +488,7 @@ namespace DOL.GS
                 default: return 15;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int MaxHealth
         {
             get { return 10000; }
@@ -728,7 +508,7 @@ namespace DOL.GS
                 return;
             base.StopFollowing();
         }
-        public override void Follow(GameObject target, int minDistance, int maxDistance)
+        public override void Follow(GameObject target, long minDistance, long maxDistance)
         {
             if (IsAlive)
                 return;
@@ -759,7 +539,6 @@ namespace DOL.GS
             RespawnInterval = -1;
             Flags = (GameNPC.eFlags)44;//noname notarget flying
             Faction = FactionMgr.GetFactionByID(140);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(140));
             MaxSpeedBase = 300;
 
             LoadedFromScript = true;
@@ -797,7 +576,7 @@ namespace DOL.AI.Brain
 {
     public class TorstEddiesBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public TorstEddiesBrain() : base()
         {
             AggroLevel = 100;
@@ -808,15 +587,14 @@ namespace DOL.AI.Brain
         private protected bool Point2check = false;
         bool SetNpcTarget = false;
 
-        private protected static GameNPC trostnpc = null;
-        private protected static GameNPC TrostNpc
+        private protected GameNPC trostnpc = null;
+        private protected GameNPC TrostNpc
         {
             get { return trostnpc; }
             set { trostnpc = value; }
         }
         public override void Think()
         {
-            Body.CurrentSpeed = 300;
             if (!SetNpcTarget)
             {
                 foreach (GameNPC npc in Body.GetNPCsInRadius(1500))
@@ -835,7 +613,7 @@ namespace DOL.AI.Brain
                 Point3D newPoint = new Point3D(TrostNpc.X + Util.Random(-200, 200), TrostNpc.Y + Util.Random(-200, 200), TrostNpc.Z + Util.Random(0, 100));
                 if (!Body.IsWithinRadius(oldPoint, 20) && !Point1check)
                 {
-                    Body.WalkTo(oldPoint, 300);
+                    Body.PathTo(oldPoint, 300);
                 }
                 else
                 {
@@ -843,7 +621,7 @@ namespace DOL.AI.Brain
                     Point2check = false;
                     if (!Body.IsWithinRadius(newPoint, 20) && Point1check && !Point2check)
                     {
-                        Body.WalkTo(newPoint, 300);
+                        Body.PathTo(newPoint, 300);
                     }
                     else
                     {
@@ -877,13 +655,12 @@ namespace DOL.AI.Brain
                     spell.Range = 200;
                     spell.Radius = 300;
                     spell.SpellID = 11926;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.DirectDamageNoVariance.ToString();
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_ColdGroundDD = new Spell(spell, 60);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ColdGroundDD);
                 }
                 return m_ColdGroundDD;
             }

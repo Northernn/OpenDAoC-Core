@@ -1,10 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
-using DOL.GS.PacketHandler;
 using DOL.Events;
 using DOL.GS;
-using System.Collections.Generic;
+using DOL.GS.PacketHandler;
 
 namespace DOL.GS
 {
@@ -28,11 +28,33 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
+		private readonly List<GameNPC> _orbs = new();
+		public bool OrbsAlive
+		{
+			get
+			{
+				foreach (GameNPC orb in _orbs)
+				{
+					if (orb.IsAlive && orb.ObjectState == eObjectState.Active)
+						return true;
+				}
+				return false;
+			}
+		}
+		private bool HasOrb(Type orbType)
+		{
+			foreach (GameNPC orb in _orbs)
+			{
+				if (orb.GetType() == orbType)
+					return true;
+			}
+			return false;
+		}
 		public override void TakeDamage(GameObject source, eDamageType damageType, int damageAmount, int criticalAmount)
 		{
 			if (source is GamePlayer || source is GameSummonedPet)
 			{
-				if (LyftMihtOne.Orb1Count > 0 || LyftMihtTwo.Orb2Count > 0 || LyftMihtThree.Orb3Count > 0 || LyftMihtFour.Orb4Count > 0)
+				if (OrbsAlive)
 				{
 					if (damageType == eDamageType.Body || damageType == eDamageType.Cold || damageType == eDamageType.Energy || damageType == eDamageType.Heat
 						|| damageType == eDamageType.Matter || damageType == eDamageType.Spirit || damageType == eDamageType.Crush || damageType == eDamageType.Thrust
@@ -55,15 +77,8 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -102,13 +117,11 @@ namespace DOL.GS
 			Empathy = 300;
 
 			MaxSpeedBase = 250;
-			MaxDistance = 3500;
 			TetherRange = 3800;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			SpawnOrbs();
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			ScurceolHyrdeBrain sbrain = new ScurceolHyrdeBrain();
 			SetOwnBrain(sbrain);
@@ -117,7 +130,7 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(5000))
 			{
@@ -126,49 +139,51 @@ namespace DOL.GS
 					if (npc.IsAlive && (npc.Brain is LyftMihtBrain1 || npc.Brain is LyftMihtBrain2 || npc.Brain is LyftMihtBrain3 || npc.Brain is LyftMihtBrain4))
 					{
 						npc.RemoveFromWorld();
-						LyftMihtOne.Orb1Count = 0;
-						LyftMihtTwo.Orb2Count = 0;
-						LyftMihtThree.Orb3Count = 0;
-						LyftMihtFour.Orb4Count = 0;
 					}
 				}
 			}
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public void SpawnOrbs()
 		{
-			if (LyftMihtOne.Orb1Count == 0)
+			_orbs.RemoveAll(o => !o.IsAlive || o.ObjectState != eObjectState.Active);
+			if (!HasOrb(typeof(LyftMihtOne)))
 			{
 				LyftMihtOne Add = new LyftMihtOne();
 				Add.CurrentRegion = CurrentRegion;
 				Add.AddToWorld();
+				_orbs.Add(Add);
 			}
-			if (LyftMihtTwo.Orb2Count == 0)
+			if (!HasOrb(typeof(LyftMihtTwo)))
 			{
 				LyftMihtTwo Add = new LyftMihtTwo();
 				Add.CurrentRegion = CurrentRegion;
 				Add.AddToWorld();
+				_orbs.Add(Add);
 			}
-			if (LyftMihtThree.Orb3Count == 0)
+			if (!HasOrb(typeof(LyftMihtThree)))
 			{
 				LyftMihtThree Add = new LyftMihtThree();
 				Add.CurrentRegion = CurrentRegion;
 				Add.AddToWorld();
+				_orbs.Add(Add);
 			}
-			if (LyftMihtFour.Orb4Count == 0)
+			if (!HasOrb(typeof(LyftMihtFour)))
 			{
 				LyftMihtFour Add = new LyftMihtFour();
 				Add.CurrentRegion = CurrentRegion;
 				Add.AddToWorld();
+				_orbs.Add(Add);
 			}
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class ScurceolHyrdeBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ScurceolHyrdeBrain() : base()
 		{
 			AggroLevel = 100;
@@ -185,7 +200,7 @@ namespace DOL.AI.Brain
 			}
 			if (HasAggro && Body.TargetObject != null)
 			{
-				if ((LyftMihtOne.Orb1Count > 0 || LyftMihtTwo.Orb2Count > 0 || LyftMihtThree.Orb3Count > 0 || LyftMihtFour.Orb4Count > 0))
+				if (Body is ScurceolHyrde boss && boss.OrbsAlive)
 					Body.Strength = 320;
 				else
 					Body.Strength = 260;
@@ -235,12 +250,6 @@ namespace DOL.GS
         public override void StartAttack(GameObject target)
         {
         }
-		public static int Orb1Count = 0;
-        public override void Die(GameObject killer)
-        {
-			--Orb1Count;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
 		{
 			Model = 2049;
@@ -254,10 +263,8 @@ namespace DOL.GS
 			MaxSpeedBase = 0;
 			RespawnInterval = -1;//Util.Random(180000, 480000);
 			Flags = eFlags.FLYING;
-			++Orb1Count;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			LyftMihtBrain1 sbrain = new LyftMihtBrain1();
 			SetOwnBrain(sbrain);
@@ -267,20 +274,21 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class LyftMihtBrain1 : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public LyftMihtBrain1() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 250;
 			ThinkInterval = 1500;
 		}
-		private protected static bool IsTargetPicked = false;
-		private protected static GamePlayer randomtarget = null;
-		private protected static GamePlayer RandomTarget
+		private protected bool IsTargetPicked = false;
+		private protected GamePlayer randomtarget = null;
+		private protected GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -325,6 +333,7 @@ namespace DOL.AI.Brain
 	}
 }
 #endregion
+
 #region 2nd orb
 namespace DOL.GS
 {
@@ -365,12 +374,6 @@ namespace DOL.GS
 		public override void StartAttack(GameObject target)
 		{
 		}
-		public static int Orb2Count = 0;
-        public override void Die(GameObject killer)
-        {
-			--Orb2Count;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
 		{
 			Model = 2049;
@@ -384,10 +387,8 @@ namespace DOL.GS
 			MaxSpeedBase = 0;
 			RespawnInterval = -1;// Util.Random(180000, 480000);
 			Flags = eFlags.FLYING;
-			++Orb2Count;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			LyftMihtBrain2 sbrain = new LyftMihtBrain2();
 			SetOwnBrain(sbrain);
@@ -397,20 +398,21 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class LyftMihtBrain2 : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public LyftMihtBrain2() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 250;
 			ThinkInterval = 1500;
 		}
-		private protected static bool IsTargetPicked = false;
-		private protected static GamePlayer randomtarget = null;
-		private protected static GamePlayer RandomTarget
+		private protected bool IsTargetPicked = false;
+		private protected GamePlayer randomtarget = null;
+		private protected GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -455,6 +457,7 @@ namespace DOL.AI.Brain
 	}
 }
 #endregion
+
 #region 3th orb
 namespace DOL.GS
 {
@@ -495,12 +498,6 @@ namespace DOL.GS
 		public override void StartAttack(GameObject target)
 		{
 		}
-		public static int Orb3Count = 0;
-        public override void Die(GameObject killer)
-        {
-			--Orb3Count;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
 		{
 			Model = 2049;
@@ -514,10 +511,8 @@ namespace DOL.GS
 			MaxSpeedBase = 0;
 			RespawnInterval = -1;// Util.Random(180000, 480000);
 			Flags = eFlags.FLYING;
-			++Orb3Count;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			LyftMihtBrain3 sbrain = new LyftMihtBrain3();
 			SetOwnBrain(sbrain);
@@ -527,20 +522,21 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class LyftMihtBrain3 : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public LyftMihtBrain3() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 250;
 			ThinkInterval = 1500;
 		}
-		private protected static bool IsTargetPicked = false;
-		private protected static GamePlayer randomtarget = null;
-		private protected static GamePlayer RandomTarget
+		private protected bool IsTargetPicked = false;
+		private protected GamePlayer randomtarget = null;
+		private protected GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -585,6 +581,7 @@ namespace DOL.AI.Brain
 	}
 }
 #endregion
+
 #region 4th orb
 namespace DOL.GS
 {
@@ -625,12 +622,6 @@ namespace DOL.GS
 		public override void StartAttack(GameObject target)
 		{
 		}
-		public static int Orb4Count = 0;
-        public override void Die(GameObject killer)
-        {
-			--Orb4Count;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
 		{
 			Model = 2049;
@@ -644,10 +635,8 @@ namespace DOL.GS
 			Flags = eFlags.FLYING;
 			MaxSpeedBase = 0;
 			RespawnInterval = -1;// Util.Random(180000, 480000);
-			++Orb4Count;
 
 			Faction = FactionMgr.GetFactionByID(8);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(8));
 
 			LyftMihtBrain4 sbrain = new LyftMihtBrain4();
 			SetOwnBrain(sbrain);
@@ -657,20 +646,21 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class LyftMihtBrain4 : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public LyftMihtBrain4() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 250;
 			ThinkInterval = 1500;
 		}
-		private protected static bool IsTargetPicked = false;
-		private protected static GamePlayer randomtarget = null;
-		private protected static GamePlayer RandomTarget
+		private protected bool IsTargetPicked = false;
+		private protected GamePlayer randomtarget = null;
+		private protected GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }

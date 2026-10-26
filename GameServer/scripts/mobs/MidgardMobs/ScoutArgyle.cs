@@ -1,5 +1,6 @@
-﻿using DOL.AI.Brain;
+using DOL.AI.Brain;
 using DOL.GS;
+using DOL.GS.PacketHandler;
 
 namespace DOL.GS
 {
@@ -11,20 +12,12 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60165671);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			ScoutArgyleBrain sbrain = new ScoutArgyleBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = false;//load from database
 			SaveIntoDatabase();
-			base.AddToWorld();
-			return true;
+			return base.AddToWorld();
 		}
 	}
 }
@@ -32,23 +25,15 @@ namespace DOL.AI.Brain
 {
 	public class ScoutArgyleBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ScoutArgyleBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 500;
-			ThinkInterval = 1500;
 		}
 		public override void Think()
 		{
-			if(HasAggro && Body.TargetObject != null)
-            {
-				foreach (GameNPC npc in Body.GetNPCsInRadius(1000))
-				{
-					if (npc != null && npc.IsAlive && npc.PackageID == "ScoutArgyleBaf")
-						AddAggroListTo(npc.Brain as StandardMobBrain);
-				}
-			}
+			if (HasAggro && Body.TargetObject != null && PullFriends("ScoutArgyleBaf", 1000) > 0)
+				Message.MessageToArea(Body, "Scout Argyle shouts, 'Intruders in the camp! To arms!'", eChatType.CT_Say, eChatLoc.CL_ChatWindow, WorldMgr.VISIBILITY_DISTANCE);
 			base.Think();
 		}
 	}

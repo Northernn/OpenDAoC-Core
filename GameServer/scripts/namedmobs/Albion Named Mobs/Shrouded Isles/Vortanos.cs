@@ -27,15 +27,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -60,15 +53,7 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60167731);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			VortanosBrain sbrain = new VortanosBrain();
@@ -78,14 +63,14 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
 			foreach (GameNPC npc in GetNPCsInRadius(5000))
 			{
 				if (npc != null && npc.IsAlive && npc.Brain is VortanosAddBrain)
 					npc.RemoveFromWorld();
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
 		public override void EnemyKilled(GameLiving enemy)
         {
@@ -123,12 +108,11 @@ namespace DOL.GS
 					spell.Value = 65;
 					spell.Duration = 60;
 					spell.SpellID = 11917;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = "StrengthConstitutionDebuff";
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_VortanosSCDebuff = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_VortanosSCDebuff);
 				}
 				return m_VortanosSCDebuff;
 			}
@@ -158,7 +142,6 @@ namespace DOL.GS
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_VortanosDebuffDQ = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_VortanosDebuffDQ);
 				}
 				return m_VortanosDebuffDQ;
 			}
@@ -170,7 +153,7 @@ namespace DOL.AI.Brain
 {
 	public class VortanosBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public VortanosBrain() : base()
 		{
 			AggroLevel = 100;
@@ -285,7 +268,7 @@ namespace DOL.AI.Brain
 				}
 				if (Util.Chance(35) && !Body.IsCasting)
 					Body.CastSpell(Vortanos_DD, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells),false);
-				if (Util.Chance(35) && !Body.IsCasting && !target.effectListComponent.ContainsEffectForEffectType(eEffect.DamageOverTime))
+				if (Util.Chance(35) && !Body.IsCasting && !target.IsPoisoned)
 					Body.CastSpell(Vortanos_Dot, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells), false);
 				if(!CanSpawnAdds)
                 {
@@ -363,7 +346,6 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Heat;
 					m_Vortanos_DD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Vortanos_DD);
 				}
 				return m_Vortanos_DD;
 			}
@@ -393,7 +375,7 @@ namespace DOL.AI.Brain
 					spell.Duration = 12;
 					spell.Frequency = 20;
 					spell.SpellID = 11916;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.SpellGroup = 1800;
 					spell.EffectGroup = 1500;
 					spell.Type = eSpellType.DamageOverTime.ToString();
@@ -401,7 +383,6 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Matter;
 					m_Vortanos_Dot = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Vortanos_Dot);
 				}
 				return m_Vortanos_Dot;
 			}
@@ -427,15 +408,8 @@ namespace DOL.GS
 				default: return 10;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -465,7 +439,6 @@ namespace DOL.GS
 			RespawnInterval = -1;
 
 			Faction = FactionMgr.GetFactionByID(64);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(64));
 
 			VortanosAddBrain sbrain = new VortanosAddBrain();
 			SetOwnBrain(sbrain);
@@ -475,16 +448,14 @@ namespace DOL.GS
 			return true;
 		}
 		public override long ExperienceValue => 0;
-		public override void DropLoot(GameObject killer)
-		{
-		}
+		public override bool CanDropLoot => false;
 	}
 }
 namespace DOL.AI.Brain
 {
 	public class VortanosAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public VortanosAddBrain() : base()
 		{
 			AggroLevel = 100;

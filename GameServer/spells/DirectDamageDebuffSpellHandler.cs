@@ -1,110 +1,63 @@
 using System;
 using System.Collections.Generic;
-using DOL.Events;
-using DOL.GS.PacketHandler;
 using DOL.Language;
+using DOL.Logging;
 
 namespace DOL.GS.Spells
 {
 	/// <summary>
 	/// Damages the target and lowers their resistance to the spell's type.
 	/// </summary>
-	[SpellHandler("DirectDamageWithDebuff")]
+	[SpellHandler(eSpellType.DirectDamageWithDebuff)]
 	public class DirectDamageDebuffSpellHandler : AbstractResistDebuff
 	{
-		public override ECSGameSpellEffect CreateECSEffect(ECSGameEffectInitParams initParams)
+		private static readonly Logger log = LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+		public override string ShortDescription => $"Inflicts {Spell.Damage} {PropertyToString(Property1)} damage to the target and decreases its resistance by {Spell.Value}%{GetFrequencyAndDurationSuffix()}.";
+		public override eProperty Property1 => GameLiving.GetResistTypeForDamage(Spell.DamageType);
+		public override string DebuffTypeName => GlobalConstants.DamageTypeToName(Spell.DamageType);
+		protected override bool IsDualComponentSpell => true;
+
+		public DirectDamageDebuffSpellHandler(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) {}
+
+		public override ECSGameSpellEffect CreateECSEffect(in ECSGameEffectInitParams initParams)
 		{
-			return new StatDebuffECSEffect(initParams);
+			return ECSGameEffectFactory.Create(initParams, static (in i) => new StatDebuffECSEffect(i));
 		}
-		
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-		public override eProperty Property1 { get { return Caster.GetResistTypeForDamage(Spell.DamageType); } }
-		public override string DebuffTypeName { get { return GlobalConstants.DamageTypeToName(Spell.DamageType); } }
-
-		#region LOS on Keeps
 
 		public override void OnDirectEffect(GameLiving target)
 		{
 			if (target == null)
 				return;
 
-			if (Spell.Target == eSpellTarget.CONE || (Spell.Target == eSpellTarget.ENEMY && Spell.IsPBAoE))
+			if (Spell.Target is eSpellTarget.CONE || (Spell.Target is eSpellTarget.ENEMY && Spell.IsPBAoE))
 			{
-				GamePlayer player = null;
-				if (target is GamePlayer)
-				{
-					player = target as GamePlayer;
-				}
-				else
-				{
-					if (Caster is GamePlayer)
-						player = Caster as GamePlayer;
-					else if (Caster is GameNPC && (Caster as GameNPC).Brain is AI.Brain.IControlledBrain)
-					{
-						AI.Brain.IControlledBrain brain = (Caster as GameNPC).Brain as AI.Brain.IControlledBrain;
-						//Ryan: edit for BD
-						if (brain.Owner is GamePlayer)
-							player = (GamePlayer)brain.Owner;
-						else
-							player = (GamePlayer)((AI.Brain.IControlledBrain)((GameNPC)brain.Owner).Brain).Owner;
-					}
-				}
-				if (player != null)
-					player.Out.SendCheckLos(Caster, target, new CheckLosResponse(DealDamageCheckLos));
-				else
+				if (!Caster.castingComponent.StartEndOfCastLosCheck(target, this))
 					DealDamage(target);
 			}
-
-			else DealDamage(target);
-		}
-
-		private void DealDamageCheckLos(GamePlayer player, eLosCheckResponse response, ushort sourceOID, ushort targetOID)
-		{
-			if (response is eLosCheckResponse.TRUE)
-			{
-				try
-				{
-					GameLiving target = Caster.CurrentRegion.GetObject(targetOID) as GameLiving;
-					if (target != null)
-					{
-						DealDamage(target);
-
-						// Due to LOS check delay the actual cast happens after FinishSpellCast does a notify, so we notify again
-						GameEventMgr.Notify(GameLivingEvent.CastFinished, m_caster, new CastingEventArgs(this, target, m_lastAttackData));
-					}
-				}
-				catch (Exception e)
-				{
-					if (log.IsErrorEnabled)
-						log.Error(string.Format("targetOID:{0} caster:{1} exception:{2}", targetOID, Caster, e));
-				}
-			}
+			else
+				DealDamage(target);
 		}
 
 		public override void ApplyEffectOnTarget(GameLiving target)
 		{
-			// do not apply debuff to keep components or doors
-			if ((target is Keeps.GameKeepComponent) == false && (target is Keeps.GameKeepDoor) == false)
-			{
-				base.ApplyEffectOnTarget(target);
-			}
+			base.ApplyEffectOnTarget(target);
 
-			if ((Spell.Duration > 0 && Spell.Target != eSpellTarget.AREA) || Spell.Concentration > 0)
-			{
+			if ((Spell.Duration > 0 && Spell.Target is not eSpellTarget.AREA) || Spell.Concentration > 0)
 				OnDirectEffect(target);
-			}
+		}
+
+		public override void OnEndOfCastLosCheck(GameLiving target, LosCheckResponse response)
+		{
+			if (response is LosCheckResponse.True)
+				DealDamage(target);
 		}
 
 		private void DealDamage(GameLiving target)
 		{
-			if (!target.IsAlive || target.ObjectState != GameLiving.eObjectState.Active) return;
-
-			if (target is Keeps.GameKeepDoor || target is Keeps.GameKeepComponent)
-			{
-				MessageToCaster("Your spell has no effect on the keep component!", eChatType.CT_SpellResisted);
+			if (!target.IsAlive || target.ObjectState is not GameObject.eObjectState.Active)
 				return;
-			}
+
 			// calc damage
 			AttackData ad = CalculateDamageToTarget(target);
 			SendDamageMessages(ad);
@@ -114,43 +67,6 @@ namespace DOL.GS.Spells
 			if (target.IsAlive)
 				base.ApplyEffectOnTarget(target, effectiveness);*/
 		}
-		/*
-		 * We need to send resist spell los check packets because spell resist is calculated first, and
-		 * so you could be inside keep and resist the spell and be interupted when not in view
-		 */
-		protected override void OnSpellResisted(GameLiving target)
-		{
-			if (target is GamePlayer && Caster.TempProperties.GetProperty("player_in_keep_property", false))
-			{
-				GamePlayer player = target as GamePlayer;
-				player.Out.SendCheckLos(Caster, player, new CheckLosResponse(ResistSpellCheckLos));
-			}
-			else SpellResisted(target);
-		}
-
-		private void ResistSpellCheckLos(GamePlayer player, eLosCheckResponse response, ushort sourceOID, ushort targetOID)
-		{
-			if (response is eLosCheckResponse.TRUE)
-			{
-				try
-				{
-					GameLiving target = Caster.CurrentRegion.GetObject(targetOID) as GameLiving;
-					if (target != null)
-						SpellResisted(target);
-				}
-				catch (Exception e)
-				{
-					if (log.IsErrorEnabled)
-						log.Error(string.Format("targetOID:{0} caster:{1} exception:{2}", targetOID, Caster, e));
-				}
-			}
-		}
-
-		private void SpellResisted(GameLiving target)
-		{
-			base.OnSpellResisted(target);
-		}
-		#endregion
 
 		/// <summary>
 		/// Delve Info
@@ -181,7 +97,7 @@ namespace DOL.GS.Spells
 
                 list.Add(LanguageMgr.GetTranslation((Caster as GamePlayer).Client, "DirectDamageDebuffSpellHandler.DelveInfo.Function"));
 				list.Add(" "); //empty line
-				list.Add(Spell.Description);
+				list.Add(ShortDescription);
 				list.Add(" "); //empty line
                 if (Spell.Damage != 0)
                     list.Add(LanguageMgr.GetTranslation((Caster as GamePlayer).Client, "DelveInfo.Damage", Spell.Damage.ToString("0.###;0.###'%'")));
@@ -215,8 +131,5 @@ namespace DOL.GS.Spells
 				return list;
 			}
 		}
-
-		// constructor
-		public DirectDamageDebuffSpellHandler(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) {}
 	}
 }

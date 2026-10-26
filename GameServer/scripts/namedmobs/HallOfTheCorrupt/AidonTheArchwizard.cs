@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -9,6 +10,8 @@ namespace DOL.GS
 {
     public class AidonTheArchwizard : GameEpicBoss
     {
+        public readonly List<GameNPC> Copies = new List<GameNPC>();
+
         public AidonTheArchwizard() : base()
         {
         }
@@ -65,15 +68,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -85,15 +81,7 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(7721);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval =
                 ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
@@ -108,8 +96,6 @@ namespace DOL.GS
             template.AddNPCEquipment(eInventorySlot.TwoHandWeapon, 1166, 0, 94);
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
-            AidonTheArchwizardBrain.IsPulled = false;
-            AidonTheArchwizardBrain.CanCast = false;
 
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
@@ -141,7 +127,6 @@ namespace DOL.GS
                 HOC.MeleeDamageType = eDamageType.Crush;
                 HOC.RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
                 HOC.Faction = FactionMgr.GetFactionByID(187);
-                HOC.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
                 HOC.X = 31353;
                 HOC.Y = 37634;
@@ -163,8 +148,7 @@ namespace DOL.AI.Brain
 {
     public class AidonTheArchwizardBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public AidonTheArchwizardBrain()
             : base()
@@ -175,13 +159,12 @@ namespace DOL.AI.Brain
         }
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
         }
-        public static bool IsPulled = false;
-        public static bool spawn_copies = false;
+        public bool spawn_copies = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if (spawn_copies == false)
@@ -214,7 +197,7 @@ namespace DOL.AI.Brain
             }
             base.OnAttackedByEnemy(ad);
         }
-        public static bool CanCast = false;
+        public bool CanCast = false;
         public bool SpawnCopiesAgain = false;
         private bool RemoveAdds = false;
         public override void Think()
@@ -224,14 +207,9 @@ namespace DOL.AI.Brain
                 //set state to RETURN TO SPAWN
                 FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
                 Body.Health = Body.MaxHealth;
-                IsPulled = false;
                 spawn_copies = false;
                 CanCast = false;
                 SpawnCopiesAgain = false;
-                AidonCopyFire.CopyCountFire = 0;
-                AidonCopyIce.CopyCountIce = 0;
-                AidonCopyAir.CopyCountAir = 0;
-                AidonCopyEarth.CopyCountEarth = 0;
                 if (!RemoveAdds)
                 {
                     foreach (GameNPC npc in Body.GetNPCsInRadius(2500))
@@ -286,9 +264,29 @@ namespace DOL.AI.Brain
             CanCast = false;
             return 0;
         }
+        private bool CopyExists(Type copyType)
+        {
+            if (Body is not AidonTheArchwizard aidon)
+                return false;
+
+            foreach (GameNPC npc in aidon.Copies)
+            {
+                if (npc != null && npc.IsAlive && npc.ObjectState is GameObject.eObjectState.Active && npc.GetType() == copyType)
+                    return true;
+            }
+            return false;
+        }
+        private void RegisterCopy(GameNPC copy)
+        {
+            if (Body is AidonTheArchwizard aidon)
+            {
+                aidon.Copies.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+                aidon.Copies.Add(copy);
+            }
+        }
         private int SpawnMoreCopies(ECSGameTimer timer)
         {
-            if (HasAggro && AidonCopyFire.CopyCountFire == 0 && AidonCopyIce.CopyCountIce == 0 && AidonCopyAir.CopyCountAir == 0 && AidonCopyEarth.CopyCountEarth == 0)
+            if (HasAggro && !CopyExists(typeof(AidonCopyFire)) && !CopyExists(typeof(AidonCopyIce)) && !CopyExists(typeof(AidonCopyAir)) && !CopyExists(typeof(AidonCopyEarth)))
             {
                 switch (Util.Random(1, 4))
                 {
@@ -300,6 +298,7 @@ namespace DOL.AI.Brain
                         Add3.CurrentRegionID = 277;
                         Add3.Heading = 3059;
                         Add3.AddToWorld();
+                        RegisterCopy(Add3);
                         break;
                     case 2:
                         AidonCopyFire Add1 = new AidonCopyFire();
@@ -309,6 +308,7 @@ namespace DOL.AI.Brain
                         Add1.CurrentRegionID = 277;
                         Add1.Heading = 1015;
                         Add1.AddToWorld();
+                        RegisterCopy(Add1);
                         break;
                     case 3:
                         AidonCopyEarth Add4 = new AidonCopyEarth();
@@ -318,6 +318,7 @@ namespace DOL.AI.Brain
                         Add4.CurrentRegionID = 277;
                         Add4.Heading = 1019;
                         Add4.AddToWorld();
+                        RegisterCopy(Add4);
                         break;
                     case 4:
                         AidonCopyIce Add2 = new AidonCopyIce();
@@ -327,6 +328,7 @@ namespace DOL.AI.Brain
                         Add2.CurrentRegionID = 277;
                         Add2.Heading = 3008;
                         Add2.AddToWorld();
+                        RegisterCopy(Add2);
                         break;
                 }
             }
@@ -335,7 +337,7 @@ namespace DOL.AI.Brain
         }
         public void SpawnCopies()
         {
-            if (AidonCopyFire.CopyCountFire == 0)
+            if (!CopyExists(typeof(AidonCopyFire)))
             {
                 AidonCopyFire Add1 = new AidonCopyFire();
                 Add1.X = 31649;
@@ -344,8 +346,9 @@ namespace DOL.AI.Brain
                 Add1.CurrentRegionID = 277;
                 Add1.Heading = 1015;
                 Add1.AddToWorld();
+                RegisterCopy(Add1);
             }
-            if (AidonCopyIce.CopyCountIce == 0)
+            if (!CopyExists(typeof(AidonCopyIce)))
             {
                 AidonCopyIce Add2 = new AidonCopyIce();
                 Add2.X = 31083;
@@ -354,8 +357,9 @@ namespace DOL.AI.Brain
                 Add2.CurrentRegionID = 277;
                 Add2.Heading = 3008;
                 Add2.AddToWorld();
+                RegisterCopy(Add2);
             }
-            if (AidonCopyAir.CopyCountAir == 0)
+            if (!CopyExists(typeof(AidonCopyAir)))
             {
                 AidonCopyAir Add3 = new AidonCopyAir();
                 Add3.X = 31080;
@@ -364,8 +368,9 @@ namespace DOL.AI.Brain
                 Add3.CurrentRegionID = 277;
                 Add3.Heading = 3059;
                 Add3.AddToWorld();
+                RegisterCopy(Add3);
             }
-            if (AidonCopyEarth.CopyCountEarth == 0)
+            if (!CopyExists(typeof(AidonCopyEarth)))
             {
                 AidonCopyEarth Add4 = new AidonCopyEarth();
                 Add4.X = 31637;
@@ -374,6 +379,7 @@ namespace DOL.AI.Brain
                 Add4.CurrentRegionID = 277;
                 Add4.Heading = 1019;
                 Add4.AddToWorld();
+                RegisterCopy(Add4);
             }
         }
         public Spell m_AidonBoss_DD;
@@ -401,7 +407,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Heat;
                     m_AidonBoss_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_AidonBoss_DD);
                 }
                 return m_AidonBoss_DD;
             }
@@ -424,13 +429,12 @@ namespace DOL.AI.Brain
                     spell.Name = "Aidon's Damage Shield";
                     spell.TooltipId = 57;
                     spell.SpellID = 11770;
-                    spell.Target = "Self";
+                    spell.Target = eSpellTarget.SELF.ToString();
                     spell.Type = "DamageShield";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Heat;
                     m_FireDS = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_FireDS);
                 }
                 return m_FireDS;
             }
@@ -445,15 +449,8 @@ namespace DOL.GS
         public AidonCopyFire() : base()
         {
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 200;
@@ -466,12 +463,6 @@ namespace DOL.GS
         public override int MaxHealth
         {
             get { return 5000; }
-        }
-        public static int CopyCountFire = 0;
-        public override void Die(GameObject killer)
-        {
-            --CopyCountFire;
-            base.Die(killer);
         }
         public override short Dexterity { get => base.Dexterity; set => base.Dexterity = 200; }
         public override short Piety { get => base.Piety; set => base.Piety = 200; }
@@ -498,14 +489,12 @@ namespace DOL.GS
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
-            ++CopyCountFire;
 
             Size = 55;
             Level = 75;
             MaxSpeedBase = 0;//copies not moves
 
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = 6;
             Realm = eRealm.None;
             AidonCopyFireBrain adds = new AidonCopyFireBrain();
@@ -521,8 +510,7 @@ namespace DOL.AI.Brain
 {
     public class AidonCopyFireBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public AidonCopyFireBrain()
             : base()
         {
@@ -561,7 +549,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Heat;
                     m_Aidon_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Aidon_DD);
                 }
                 return m_Aidon_DD;
             }
@@ -578,15 +565,7 @@ namespace DOL.GS
         public AidonCopyIce() : base()
         {
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 200;
@@ -599,12 +578,6 @@ namespace DOL.GS
         public override int MaxHealth
         {
             get { return 5000; }
-        }
-        public static int CopyCountIce = 0;
-        public override void Die(GameObject killer)
-        {
-            --CopyCountIce;
-            base.Die(killer);
         }
         public override short Dexterity { get => base.Dexterity; set => base.Dexterity = 200; }
         public override short Piety { get => base.Piety; set => base.Piety = 200; }
@@ -631,14 +604,12 @@ namespace DOL.GS
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
-            ++CopyCountIce;
 
             Size = 55;
             Level = 75;
             MaxSpeedBase = 0;//copies not moves
 
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = 6;
             Realm = eRealm.None;
             AidonCopyIceBrain adds = new AidonCopyIceBrain();
@@ -654,8 +625,7 @@ namespace DOL.AI.Brain
 {
     public class AidonCopyIceBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public AidonCopyIceBrain()
             : base()
         {
@@ -696,7 +666,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_Aidon_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Aidon_DD);
                 }
                 return m_Aidon_DD;
             }
@@ -711,15 +680,8 @@ namespace DOL.GS
         public AidonCopyAir() : base()
         {
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 200;
@@ -732,12 +694,6 @@ namespace DOL.GS
         public override int MaxHealth
         {
             get { return 5000; }
-        }
-        public static int CopyCountAir = 0;
-        public override void Die(GameObject killer)
-        {
-            --CopyCountAir;
-            base.Die(killer);
         }
         public override short Dexterity { get => base.Dexterity; set => base.Dexterity = 200; }
         public override short Piety { get => base.Piety; set => base.Piety = 200; }
@@ -764,14 +720,12 @@ namespace DOL.GS
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
-            ++CopyCountAir;
 
             Size = 55;
             Level = 75;
             MaxSpeedBase = 0;//copies not moves
 
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = 6;
             Realm = eRealm.None;
             AidonCopyAirBrain adds = new AidonCopyAirBrain();
@@ -787,8 +741,7 @@ namespace DOL.AI.Brain
 {
     public class AidonCopyAirBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public AidonCopyAirBrain()
             : base()
         {
@@ -827,7 +780,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Spirit;
                     m_Aidon_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Aidon_DD);
                 }
                 return m_Aidon_DD;
             }
@@ -842,15 +794,8 @@ namespace DOL.GS
         public AidonCopyEarth() : base()
         {
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 200;
@@ -863,12 +808,6 @@ namespace DOL.GS
         public override int MaxHealth
         {
             get { return 5000; }
-        }
-        public static int CopyCountEarth = 0;
-        public override void Die(GameObject killer)
-        {
-            --CopyCountEarth;
-            base.Die(killer);
         }
         public override short Dexterity { get => base.Dexterity; set => base.Dexterity = 200; }
         public override short Piety { get => base.Piety; set => base.Piety = 200; }
@@ -895,14 +834,12 @@ namespace DOL.GS
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
-            ++CopyCountEarth;
 
             Size = 55;
             Level = 75;
             MaxSpeedBase = 0;//copies not moves
 
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             BodyType = 6;
             Realm = eRealm.None;
             AidonCopyEarthBrain adds = new AidonCopyEarthBrain();
@@ -918,8 +855,7 @@ namespace DOL.AI.Brain
 {
     public class AidonCopyEarthBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public AidonCopyEarthBrain()
             : base()
         {
@@ -957,7 +893,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Matter;
                     m_Aidon_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Aidon_DD);
                 }
                 return m_Aidon_DD;
             }

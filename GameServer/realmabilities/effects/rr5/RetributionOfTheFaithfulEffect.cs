@@ -27,15 +27,7 @@ namespace DOL.GS.Effects
             owner.attackComponent.StopAttack();
             owner.StopCurrentSpellcast();
             owner.DisableTurning(true);
-            GamePlayer player = owner as GamePlayer;
-            if (player != null)
-            {
-                player.Out.SendUpdateMaxSpeed();
-            }
-            else if(owner.CurrentSpeed > owner.MaxSpeed) 
-            {
-                owner.CurrentSpeed = owner.MaxSpeed;
-            }
+            owner.OnMaxSpeedChange();
         }
 
 
@@ -48,17 +40,8 @@ namespace DOL.GS.Effects
         {
             owner.IsStunned = false;
             owner.DisableTurning(false);
-            GamePlayer player = owner as GamePlayer;
-            if (player != null)
-            {
-                player.Out.SendUpdateMaxSpeed();
-            }
-            else
-            {
-                owner.CurrentSpeed = owner.MaxSpeed;
-            }
+            owner.OnMaxSpeedChange();
             base.Stop();
-
         }
 
         public int SpellEffectiveness
@@ -114,7 +97,7 @@ namespace DOL.GS.Effects
             if (args.AttackData == null) return;
             if (!args.AttackData.IsMeleeAttack) return;
 			//FIXME: [WARN] this has been commented out, it should be handled somewhere
-			if (args.AttackData.Attacker.EffectList.GetOfType<ChargeEffect>() != null || args.AttackData.Attacker.TempProperties.GetProperty("Charging", false))
+			if (args.AttackData.Attacker.EffectList.GetOfType<ChargeEffect>() != null || args.AttackData.Attacker.TempProperties.GetProperty<bool>("Charging"))
 				return;
             if ( !owner.IsWithinRadius( args.AttackData.Attacker, 300 ) ) return;
             if (Util.Chance(50))

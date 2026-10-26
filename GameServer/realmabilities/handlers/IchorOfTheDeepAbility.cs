@@ -1,10 +1,8 @@
 using System;
-using DOL.GS.PacketHandler;
-using DOL.GS.Effects;
-using DOL.GS.Spells;
-using DOL.Events;
 using DOL.Database;
-using DOL.Language;
+using DOL.Events;
+using DOL.GS.Effects;
+using DOL.GS.PacketHandler;
 
 namespace DOL.GS.RealmAbilities
 {
@@ -13,10 +11,10 @@ namespace DOL.GS.RealmAbilities
 		public IchorOfTheDeepAbility(DbAbility dba, int level) : base(dba, level) { }
 
 		private ECSGameTimer m_expireTimerID;
-		private ECSGameTimer m_rootExpire;
 		private int dmgValue = 0;
 		private int duration = 0;
 		private GamePlayer caster;
+		private ECSGameEffect _ichorEffect;
 
 		public override void Execute(GameLiving living)
 		{
@@ -162,64 +160,42 @@ namespace DOL.GS.RealmAbilities
 
 		private int CalculateDamageWithFalloff(int initialDamage, GameLiving initTarget, GameLiving aetarget)
 		{
-			//Console.WriteLine($"initial {initialDamage} caster {initTarget} target {aetarget}");
 			int modDamage = (int)Math.Round((decimal) (initialDamage * ((500-(initTarget.GetDistance(new Point2D(aetarget.X, aetarget.Y)))) / 500.0)));
-			//Console.WriteLine($"distance {((500-(initTarget.GetDistance(new Point2D(aetarget.X, aetarget.Y)))) / 500.0)} Mod {modDamage}");
 			return modDamage;
 		}
 
 		protected virtual int RootExpires(ECSGameTimer timer)
 		{
-			GameLiving living = timer.Owner as GameLiving;
-			if (living != null)
+			if (timer.Owner is GameLiving living && _ichorEffect != null)
 			{
-				living.BuffBonusMultCategory1.Remove((int)eProperty.MaxSpeed, this);
-				SendUpdates(living);
+				living.BuffBonusMultCategory1.Remove((int) eProperty.MaxSpeed, _ichorEffect);
+				living.OnMaxSpeedChange();
 			}
+
 			timer.Stop();
-			timer = null;
 			return 0;
 		}
-		/// <summary>
-		/// Sends updates on effect start/stop
-		/// </summary>
-		/// <param name="owner"></param>
-		protected static void SendUpdates(GameLiving owner)
-		{
-			if (owner.IsMezzed || owner.IsStunned)
-				return;
 
-			GamePlayer player = owner as GamePlayer;
-			if (player != null)
-				player.Out.SendUpdateMaxSpeed();
-
-			GameNPC npc = owner as GameNPC;
-			if (npc != null)
-			{
-				short maxSpeed = npc.MaxSpeed;
-				if (npc.CurrentSpeed > maxSpeed)
-					npc.CurrentSpeed = maxSpeed;
-			}
-		}
 		/// <summary>
 		/// Handles attack on buff owner
 		/// </summary>
-		/// <param name="e"></param>
-		/// <param name="sender"></param>
-		/// <param name="arguments"></param>
 		protected virtual void OnAttacked(DOLEvent e, object sender, EventArgs arguments)
 		{
-			AttackedByEnemyEventArgs attackArgs = arguments as AttackedByEnemyEventArgs;
-			GameLiving living = sender as GameLiving;
-			if (attackArgs == null) return;
-			if (living == null) return;
+			if (arguments is not AttackedByEnemyEventArgs attackArgs)
+				return;
+
+			if (sender is not GameLiving living)
+				return;
+
+			if (_ichorEffect == null)
+				return;
 
 			switch (attackArgs.AttackData.AttackResult)
 			{
 				case eAttackResult.HitStyle:
 				case eAttackResult.HitUnstyled:
-					living.BuffBonusMultCategory1.Remove((int)eProperty.MaxSpeed, this);
-					SendUpdates(living);
+					living.BuffBonusMultCategory1.Remove((int) eProperty.MaxSpeed, _ichorEffect);
+					living.OnMaxSpeedChange();
 					break;
 			}
 		}
@@ -237,7 +213,7 @@ namespace DOL.GS.RealmAbilities
 
 			#region Resists and Determination
 			var primaryResistModifier = target.GetResist(eDamageType.Spirit);
-			var secondaryResistModifier = target.SpecBuffBonusCategory[(int)eProperty.Resist_Spirit];
+			var secondaryResistModifier = target.SpecBuffBonusCategory[eProperty.Resist_Spirit];
 			var rootdet = ((target.GetModified(eProperty.SpeedDecreaseDurationReduction) - 100) * -1);
 
 			var resistModifier = 0;
@@ -267,11 +243,8 @@ namespace DOL.GS.RealmAbilities
 			if (!GameServer.ServerRules.IsAllowedToAttack(caster, target, true))
 				return;
 
-			//GameSpellEffect mez = SpellHandler.FindEffectOnTarget(aeplayer, "Mesmerize");
 			ECSGameEffect mez = EffectListService.GetEffectOnTarget(target, eEffect.Mez);
-			if (mez != null)
-				EffectService.RequestCancelEffect(mez);
-				//mez.Cancel(false);
+			mez?.End();
 
 			// Falloff damage
 			int dmgWithFalloff = CalculateDamageWithFalloff(dmgValue, living, target);
@@ -288,8 +261,8 @@ namespace DOL.GS.RealmAbilities
 			// Make sure they're not using SoS (needs fixing), Charge, or in Shade form
 			var targetCharge = EffectListService.GetEffectOnTarget(target, eEffect.Charge);
 			var targetShade = EffectListService.GetEffectOnTarget(target, eEffect.Shade);
-			var targetSoS = EffectListService.GetEffectOnTarget(target, eEffect.SpeedOfSound);
-			if (targetCharge == null && targetSoS == null && targetShade == null)
+
+			if (targetCharge == null && targetShade == null)
 			{
 				/*
 				// Send spell message to player if applicable
@@ -318,7 +291,7 @@ namespace DOL.GS.RealmAbilities
 					//TODO - Refresh existing Ichor duration (or whatever the proper mechanic is?)
 				}
 				else
-					new AtlasOF_IchorECSEffect(new ECSGameEffectInitParams(target, duration, 1));
+					ECSGameEffectFactory.Create(new(target, duration, 1), static (in i) => new AtlasOF_IchorECSEffect(i));
 			}
 			else
 				// Send resist animation if they cannot be rooted

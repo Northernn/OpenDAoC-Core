@@ -1,30 +1,10 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-
+using System.Threading;
 using DOL.GS.Effects;
-
-using log4net;
 
 namespace DOL.GS.Spells
 {
@@ -36,12 +16,12 @@ namespace DOL.GS.Spells
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
 		/// Locking Object
 		/// </summary>
-		private readonly object m_lockObject = new object();
+		private readonly Lock _lock = new();
 		
 		/// <summary>
 		/// Holds the list owner
@@ -83,7 +63,7 @@ namespace DOL.GS.Spells
 		{
 			BeginChanges();
 
-			lock (m_lockObject) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (_lock)
 			{
 				if (m_concSpells == null)
 					m_concSpells = new List<IConcentrationEffect>(20);
@@ -132,7 +112,7 @@ namespace DOL.GS.Spells
 			if (m_concSpells == null)
 				return;
 
-			lock (m_lockObject) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (_lock)
 			{
 				if (m_concSpells.Contains(effect))
 				{
@@ -164,7 +144,7 @@ namespace DOL.GS.Spells
 			if (m_concSpells != null)
 			{
 				IConcentrationEffect[] concEffect = null;
-				lock (m_lockObject)
+				lock (_lock)
 				{
 					concEffect = m_concSpells.ToArray();
 				}
@@ -172,7 +152,7 @@ namespace DOL.GS.Spells
 				BeginChanges();
 				foreach (IConcentrationEffect fx in concEffect.Where(eff => !leaveself || leaveself && eff.OwnerName != m_owner.Name))
 				{
-					EffectService.RequestCancelConcEffect(fx, false);
+					(fx as ECSGameSpellEffect)?.End(false);
 				}
 				if(updatePlayer)
 					CommitChanges();
@@ -217,7 +197,7 @@ namespace DOL.GS.Spells
 			if (m_concSpells == null)
 				return null;
 			
-			lock (m_lockObject) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (_lock)
 			{
 				return m_concSpells.FirstOrDefault(eff => eff.GetType().Equals(effectType));
 			}
@@ -233,7 +213,7 @@ namespace DOL.GS.Spells
 			if (m_concSpells == null)
 				return new IConcentrationEffect[0];
 			
-			lock (m_lockObject) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (_lock)
 			{
 				return m_concSpells.Where(eff => eff.GetType().Equals(effectType)).ToArray();
 			}
@@ -249,7 +229,7 @@ namespace DOL.GS.Spells
 				if (m_concSpells == null)
 					return null;
 				
-				lock (m_lockObject)
+				lock (_lock)
 				{
 					return m_concSpells[index];
 				}
@@ -282,7 +262,7 @@ namespace DOL.GS.Spells
 				if (m_concSpells == null)
 					return 0;
 				
-				lock (m_lockObject)
+				lock (_lock)
 				{
 					return m_concSpells.Count;
 				}
@@ -299,7 +279,7 @@ namespace DOL.GS.Spells
 			if (m_concSpells == null)
 				return new IConcentrationEffect[0].AsEnumerable().GetEnumerator();
 			
-			lock (m_lockObject)
+			lock (_lock)
 			{
 				return m_concSpells.ToArray().AsEnumerable().GetEnumerator();
 			}

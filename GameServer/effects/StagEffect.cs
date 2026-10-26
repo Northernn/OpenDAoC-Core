@@ -90,8 +90,8 @@ namespace DOL.GS.Effects
 				m_amount = (int)((living as GamePlayer).CalculateMaxHealth(living.Level, living.GetModified(eProperty.Constitution)) * m_amountPercent);
 			else m_amount = (int)(living.MaxHealth * m_amountPercent);
 
-			living.BaseBuffBonusCategory[(int)eProperty.MaxHealth] += m_amount;
-			living.Health += (int)(living.GetModified(eProperty.MaxHealth) * m_amountPercent);
+			living.BaseBuffBonusCategory[eProperty.MaxHealth] += m_amount;
+			living.Health += (int)(living.MaxHealth * m_amountPercent);
 			if (living.Health > living.MaxHealth) living.Health = living.MaxHealth;
 
 			living.Emote(eEmote.StagFrenzy);
@@ -108,9 +108,9 @@ namespace DOL.GS.Effects
 			base.Stop();
 			m_owner.Model = m_originalModel;
 
-			double m_amountPercent = m_amount / m_owner.GetModified(eProperty.MaxHealth);
+			double m_amountPercent = m_amount / m_owner.MaxHealth;
 			int playerHealthPercent = m_owner.HealthPercent;
-			m_owner.BaseBuffBonusCategory[(int)eProperty.MaxHealth] -= m_amount;
+			m_owner.BaseBuffBonusCategory[eProperty.MaxHealth] -= m_amount;
 			if (m_owner.IsAlive)
 				m_owner.Health = (int)Math.Max(1, 0.01 * m_owner.MaxHealth * playerHealthPercent);
 

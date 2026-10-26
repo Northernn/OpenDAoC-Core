@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -48,15 +49,8 @@ namespace DOL.GS
                 }
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -92,16 +86,8 @@ namespace DOL.GS
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(8817);
             LoadTemplate(npcTemplate);
 
-            Strength = npcTemplate.Strength;
-            Constitution = npcTemplate.Constitution;
-            Dexterity = npcTemplate.Dexterity;
-            Quickness = npcTemplate.Quickness;
-            Empathy = npcTemplate.Empathy;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
             Gender = eGender.Female;
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
 
             GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
@@ -115,23 +101,16 @@ namespace DOL.GS
             Inventory = template.CloseTemplate();
             SwitchWeapon(eActiveWeaponSlot.TwoHanded);
             // humanoid
-            IsOakUp = false;
-            if (IsOakUp == false)
-            {
-                SpawnOak();
-                IsOakUp = true;
-            }
+            SpawnOak();
             VisibleActiveWeaponSlots = 34;
             MeleeDamageType = eDamageType.Crush;
             BodyType = 6;
             IsCloakHoodUp = true;
-            Ogress.OgressCount = 0;
             BlackLadyBrain blackladybrain = new BlackLadyBrain();
             SetOwnBrain(blackladybrain);
             base.AddToWorld();
             return true;
         }
-        public static bool IsOakUp = false;
         public void SpawnOak()
         {
                 AncientBlackOak Add1 = new AncientBlackOak();
@@ -143,15 +122,14 @@ namespace DOL.GS
                 Add1.Heading = 2053;
                 Add1.AddToWorld();
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
-            base.Die(killer);
+            base.ProcessDeath(killer);
             foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(CurrentRegionID))
             {
                 if (npc.Brain is OgressBrain)
                 {
                     npc.RemoveFromWorld();
-                    Ogress.OgressCount = 0;
                 }
             }
             foreach (GameNPC npc2 in WorldMgr.GetNPCsFromRegion(CurrentRegionID))
@@ -168,7 +146,7 @@ namespace DOL.AI.Brain
 {
     class BlackLadyBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public BlackLadyBrain()
             : base()
         {
@@ -192,7 +170,6 @@ namespace DOL.AI.Brain
                             if (npc.IsAlive && npc.Brain is OgressBrain)
                             {
                                 npc.RemoveFromWorld();
-                                Ogress.OgressCount = 0;
                             }
                         }
                     }
@@ -211,9 +188,11 @@ namespace DOL.AI.Brain
             }
             base.Think();
         }
+        private readonly List<GameNPC> _ogresses = new List<GameNPC>();
         public void SpawnOgress()
         {
-            if (Ogress.OgressCount < 5)
+            _ogresses.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+            if (_ogresses.Count < 5)
             {
                 switch (Util.Random(1, 2))
                 {
@@ -227,6 +206,7 @@ namespace DOL.AI.Brain
                             Add1.RespawnInterval = -1;
                             Add1.Heading = 3618;
                             Add1.AddToWorld();
+                            _ogresses.Add(Add1);
                         }
                         break;
                     case 2:
@@ -239,6 +219,7 @@ namespace DOL.AI.Brain
                             Add2.RespawnInterval = -1;
                             Add2.Heading = 2114;
                             Add2.AddToWorld();
+                            _ogresses.Add(Add2);
                         }
                         break;
                 }
@@ -269,7 +250,6 @@ namespace DOL.AI.Brain
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Cold;
                     m_BlackLady_DD = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_BlackLady_DD);
                 }
 
                 return m_BlackLady_DD;
@@ -311,12 +291,6 @@ namespace DOL.GS
         {
             get { return 2500; }
         }
-        public static int OgressCount = 0;
-        public override void Die(GameObject killer)
-        {
-            --OgressCount;
-            base.Die(killer);
-        }
         public override bool AddToWorld()
         {
             Model = 402;
@@ -324,14 +298,11 @@ namespace DOL.GS
             Name = "Ogress";
             Size = (byte)Util.Random(40, 50);
             Faction = FactionMgr.GetFactionByID(187);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
             RespawnInterval = -1;
             MaxSpeedBase = 200;
             Realm = eRealm.None;
-            MaxDistance = 0;
             TetherRange = 0;
 
-            ++OgressCount;
             Strength = 50;
             Dexterity = 200;
             Constitution = 100;
@@ -352,28 +323,7 @@ namespace DOL.AI.Brain
             : base()
         {
             AggroLevel = 100;
-            AggroRange = 1200;
-        }
-        public override void Think()
-        {
-            foreach(GamePlayer player in Body.GetPlayersInRadius(2000))
-            {
-                if(player != null)
-                {
-                    if(player.IsAlive && player.IsVisibleTo(Body) && player.Client.Account.PrivLevel == 1 && (player.CharacterClass.ID == 6 || player.CharacterClass.ID == 10 || player.CharacterClass.ID == 48
-                    || player.CharacterClass.ID == 46 || player.CharacterClass.ID == 47 || player.CharacterClass.ID == 42 || player.CharacterClass.ID == 28 || player.CharacterClass.ID == 26))
-                    {
-                        if (AggroList.TryAdd(player, new(150)))
-                            Body.StartAttack(player);
-                    }
-                    else
-                    {
-                        if (AggroList.TryAdd(player, new(10)))
-                            Body.StartAttack(player);
-                    }
-                }
-            }
-            base.Think();
+            AggroRange = 2000;
         }
     }
 }

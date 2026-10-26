@@ -14,7 +14,6 @@ using DOL.GS.Effects;
 using DOL.GS.Movement;
 using DOL.GS.Quests;
 using DOL.GS.Spells;
-using DOL.GS.Utils;
 using DOL.GS.Housing;
 using DOL.GS.RealmAbilities;
 using System;
@@ -25,7 +24,6 @@ using DOL.GS;
 using DOL.GS.PacketHandler;
 using DOL.GS.Scripts;
 using System.Threading;
-using log4net;
 using DOL.AI.Brain;
 
 namespace DOL.GS.Scripts

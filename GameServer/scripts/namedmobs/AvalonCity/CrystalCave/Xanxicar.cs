@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -45,15 +46,8 @@ namespace DOL.GS
 		{
 			get { return 100000; }
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -65,18 +59,8 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(102);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
-
 			Faction = FactionMgr.GetFactionByID(10);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(10));
-
 			XanxicarBrain sbrain = new XanxicarBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = false;//load from database
@@ -85,7 +69,7 @@ namespace DOL.GS
 			return true;
 		}
         #region Die/Boradcast/ReportNews/AwardDragonKillPoints
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
 		{
 			// debug
 			if (killer == null)
@@ -110,8 +94,6 @@ namespace DOL.GS
 
 			AwardDragonKillPoint();
 
-			base.Die(killer);
-
 			foreach (String message in m_deathAnnounce)
 			{
 				BroadcastMessage(String.Format(message, Name));
@@ -121,10 +103,12 @@ namespace DOL.GS
 			{
 				ReportNews(killer);
 			}
+
+			base.ProcessDeath(killer);
 		}
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -174,7 +158,7 @@ namespace DOL.AI.Brain
 {
 	public class XanxicarBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public XanxicarBrain() : base()
 		{
 			AggroLevel = 100;
@@ -182,30 +166,30 @@ namespace DOL.AI.Brain
 			ThinkInterval = 1500;
 		}
         #region Check Flags/Port,DD list/broadcast
-        public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+        public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
 		}
-		public static GamePlayer randomtarget2 = null;
-		public static GamePlayer RandomTarget2
+		public GamePlayer randomtarget2 = null;
+		public GamePlayer RandomTarget2
 		{
 			get { return randomtarget2; }
 			set { randomtarget2 = value; }
 		}
-		public static bool IsTargetPicked = false;
-		public static bool IsTargetPicked2 = false;
-		public static bool Bomb1 = false;
-		public static bool Bomb2 = false;
-		public static bool Bomb3 = false;
-		public static bool Bomb4 = false;
+		public bool IsTargetPicked = false;
+		public bool IsTargetPicked2 = false;
+		public bool Bomb1 = false;
+		public bool Bomb2 = false;
+		public bool Bomb3 = false;
+		public bool Bomb4 = false;
 		private bool RemoveAdds = false;
         System.Collections.Generic.List<GamePlayer> Port_Enemys = new System.Collections.Generic.List<GamePlayer>();
 		System.Collections.Generic.List<GamePlayer> DD_Enemys = new System.Collections.Generic.List<GamePlayer>();
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 			}
@@ -324,7 +308,7 @@ namespace DOL.AI.Brain
 				Bomb4 = false;
 				SpawnAddsOnce = false;
 				CheckForSingleAdd = false;
-				XanxicarianChampion.XanxicarianChampionCount = 0;
+				_champions.Clear();
 				if (!RemoveAdds)
 				{
 					foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(Body.CurrentRegionID))
@@ -373,12 +357,12 @@ namespace DOL.AI.Brain
 				}
 				if(Body.HealthPercent<=50)
                 {
-					if(SpawnAddsOnce==false && XanxicarianChampion.XanxicarianChampionCount == 0)
+					if(SpawnAddsOnce==false && AliveChampionCount == 0)
                     {
 						SpawnAdds();
 						SpawnAddsOnce = true;
                     }
-					if(SpawnAddsOnce && CheckForSingleAdd==false && XanxicarianChampion.XanxicarianChampionCount == 0)
+					if(SpawnAddsOnce && CheckForSingleAdd==false && AliveChampionCount == 0)
                     {
 						new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(SpawnMoreAdds), Util.Random(15000, 25000));//spawn 1 add every 25-35s
 						CheckForSingleAdd = true;
@@ -390,8 +374,17 @@ namespace DOL.AI.Brain
         #endregion
 
         #region adds
-        public static bool SpawnAddsOnce = false;
-		public static bool CheckForSingleAdd = false;
+        public bool SpawnAddsOnce = false;
+		public bool CheckForSingleAdd = false;
+		private readonly List<GameNPC> _champions = new List<GameNPC>();
+		private int AliveChampionCount
+		{
+			get
+			{
+				_champions.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+				return _champions.Count;
+			}
+		}
 		public void SpawnAdds()
         {
 			for (int i = 0; i < 5; i++)
@@ -404,11 +397,12 @@ namespace DOL.AI.Brain
 				Add.CurrentRegion = Body.CurrentRegion;
 				Add.Heading = Body.Heading;
 				Add.AddToWorld();
+				_champions.Add(Add);
 			}
 		}
 		public int SpawnMoreAdds(ECSGameTimer timer)
         {
-			if (XanxicarianChampion.XanxicarianChampionCount == 0 && HasAggro)
+			if (AliveChampionCount == 0 && HasAggro)
 			{
 				XanxicarianChampion Add = new XanxicarianChampion();
 				Add.X = Body.X + Util.Random(-150, 150);
@@ -418,6 +412,7 @@ namespace DOL.AI.Brain
 				Add.CurrentRegion = Body.CurrentRegion;
 				Add.Heading = Body.Heading;
 				Add.AddToWorld();
+				_champions.Add(Add);
 				CheckForSingleAdd = false;
 			}
 			return 0;
@@ -449,7 +444,6 @@ namespace DOL.AI.Brain
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Energy;
 					m_XanxicarStomp = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_XanxicarStomp);
 				}
 				return m_XanxicarStomp;
 			}
@@ -478,7 +472,6 @@ namespace DOL.AI.Brain
 					spell.Uninterruptible = true;
 					spell.DamageType = (int)eDamageType.Energy;
 					m_XanxicarGlare = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_XanxicarGlare);
 				}
 				return m_XanxicarGlare;
 			}
@@ -504,10 +497,7 @@ namespace DOL.GS
 				default: return 70;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 300;
@@ -522,29 +512,12 @@ namespace DOL.GS
 			get { return 8000; }
 		}
 
-		public static int XanxicarianChampionCount = 0;
-		public override void Die(GameObject killer)
-		{
-			--XanxicarianChampionCount;
-			base.Die(killer);
-		}
 		public override bool AddToWorld()
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(91);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
-			++XanxicarianChampionCount;
-
 			Faction = FactionMgr.GetFactionByID(10);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(10));
 			RespawnInterval = -1;
-
 			XanxicarianChampionBrain sbrain = new XanxicarianChampionBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = true;

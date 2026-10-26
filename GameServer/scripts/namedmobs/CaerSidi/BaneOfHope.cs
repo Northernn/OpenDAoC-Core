@@ -25,10 +25,7 @@ namespace DOL.GS.Scripts
             // 85% ABS is cap.
             return 0.20;
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * 30 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -38,23 +35,12 @@ namespace DOL.GS.Scripts
         }
         public override short MaxSpeedBase => (short) (191 + Level * 2);
         public override int MaxHealth => 100000;
-        public override int AttackRange
-        {
-            get => 180;
-            set { }
-        }
+        public override int MeleeAttackRange => 180;
         public override bool AddToWorld()
         {
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60158245);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
 
             BaneOfHopeBrain adds = new BaneOfHopeBrain();
             SetOwnBrain(adds);
@@ -72,15 +58,15 @@ namespace DOL.AI.Brain
 {
     public class BaneOfHopeBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =  log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public BaneOfHopeBrain()
             :base()
         {
             AggroLevel = 100;
             AggroRange = 500;
         }
-        public static GameLiving TeleportTarget = null;
-        public static bool CanPoison = false;
+        public GameLiving TeleportTarget = null;
+        public bool CanPoison = false;
         public override void OnAttackedByEnemy(AttackData ad)
         {
             if(ad != null && ad.Attacker != null && Body.TargetObject != ad.Attacker && CanPoison==false)
@@ -160,13 +146,12 @@ namespace DOL.AI.Brain
                     spell.Duration = 45;
                     spell.Frequency = 40; //dot tick every 4s
                     spell.SpellID = 11783;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "DamageOverTime";
                     spell.Uninterruptible = true;
                     spell.MoveCast = true;
                     spell.DamageType = (int)eDamageType.Spirit; //Spirit DMG Type
                     m_BaneOfHope_Aoe_Dot = new Spell(spell, 70);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_BaneOfHope_Aoe_Dot);
                 }
 
                 return m_BaneOfHope_Aoe_Dot;

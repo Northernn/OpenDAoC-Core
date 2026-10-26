@@ -1,42 +1,12 @@
-﻿/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
-/* Created by Kelt
- * Date : November 06 2021
- * Version : 1.0
- * 
- * All you need to do when you add this to your core is
- * /mob create DOL.GS.BuffMerchantEvent
- * and then
- * /merchant sell add BuffTokens
- */
-
+﻿using System;
+using System.Collections;
+using System.Linq;
+using System.Reflection;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
 using DOL.GS.Spells;
 using DOL.Language;
-using log4net;
-using System;
-using System.Collections;
-using System.Linq;
-using System.Reflection;
 
 namespace DOL.GS.Scripts
 {
@@ -192,12 +162,12 @@ namespace DOL.GS.Scripts
                     spell.Duration = BUFFS_SPELL_DURATION;
                     spell.Value = 20; //Effective buff 58
                     spell.Name = "Armor of the Realm";
-                    spell.Description = "Adds to the recipient's Armor Factor (AF) resulting in better protection againts some forms of attack. It acts in addition to any armor the target is wearing.";
+                    spell.Description = "Adds to the recipient's Armor Factor (AF) resulting in better protection against some forms of attack. It acts in addition to any armor the target is wearing.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88001;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Base Armor Factor by 20.";
-                    spell.Type = eSpellType.ArmorFactorBuff.ToString();
+                    spell.Type = eSpellType.BaseArmorFactorBuff.ToString();
                     spell.EffectGroup = 1;
 
                     m_baseaf = new Spell(spell, 39);
@@ -223,12 +193,12 @@ namespace DOL.GS.Scripts
                     spell.Duration = BUFFS_SPELL_DURATION;
                     spell.Value = 20; //Effective buff 58
                     spell.Name = "Armor of the Realm";
-                    spell.Description = "Adds to the recipient's Armor Factor (AF) resulting in better protection againts some forms of attack. It acts in addition to any armor the target is wearing.";
+                    spell.Description = "Adds to the recipient's Armor Factor (AF) resulting in better protection against some forms of attack. It acts in addition to any armor the target is wearing.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89001;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Base Armor Factor by 20.";
-                    spell.Type = eSpellType.ArmorFactorBuff.ToString();
+                    spell.Type = eSpellType.BaseArmorFactorBuff.ToString();
                     spell.EffectGroup = 1;
 
                     m_casterbaseaf = new Spell(spell, 39);
@@ -257,7 +227,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases target's Strength.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88002;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Strength by 20.";
                     spell.Type = eSpellType.StrengthBuff.ToString();
                     spell.EffectGroup = 4;
@@ -288,7 +258,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases target's Strength.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89002;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Strength by 20.";
                     spell.Type = eSpellType.StrengthBuff.ToString();
                     spell.EffectGroup = 4;
@@ -319,7 +289,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases target's Constitution.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88003;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Constitution by 20.";
                     spell.Type = eSpellType.ConstitutionBuff.ToString();
                     spell.EffectGroup = 201;
@@ -350,7 +320,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases target's Constitution.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89003;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Constitution by 20.";
                     spell.Type = eSpellType.ConstitutionBuff.ToString();
                     spell.EffectGroup = 201;
@@ -381,7 +351,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Dexterity for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88004;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Dexterity by 20.";
                     spell.Type = eSpellType.DexterityBuff.ToString();
                     spell.EffectGroup = 202;
@@ -412,7 +382,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Dexterity for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89004;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Dexterity by 20.";
                     spell.Type = eSpellType.DexterityBuff.ToString();
                     spell.EffectGroup = 202;
@@ -443,7 +413,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Str/Con for a character";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88005;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Str/Con by 35.";
                     spell.Type = eSpellType.StrengthConstitutionBuff.ToString();
                     spell.EffectGroup = 204;
@@ -474,7 +444,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Str/Con for a character";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89005;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Str/Con by 35.";
                     spell.Type = eSpellType.StrengthConstitutionBuff.ToString();
                     spell.EffectGroup = 204;
@@ -505,7 +475,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Dexterity and Quickness for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88006;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Dex/Qui by 35.";
                     spell.Type = eSpellType.DexterityQuicknessBuff.ToString();
                     spell.EffectGroup = 203;
@@ -536,7 +506,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Dexterity and Quickness for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89006;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Dex/Qui by 35.";
                     spell.Type = eSpellType.DexterityQuicknessBuff.ToString();
                     spell.EffectGroup = 203;
@@ -567,7 +537,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Acuity (casting attribute) for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88007;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Acuity by 35.";
                     spell.Type = eSpellType.AcuityBuff.ToString();
                     spell.EffectGroup = 200;
@@ -598,7 +568,7 @@ namespace DOL.GS.Scripts
                     spell.Description = "Increases Acuity (casting attribute) for a character.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89007;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Acuity by 35.";
                     spell.Type = eSpellType.AcuityBuff.ToString();
                     spell.EffectGroup = 200;
@@ -629,9 +599,9 @@ namespace DOL.GS.Scripts
                     spell.Description = "Adds 35 to the recipient's Armor Factor (AF), resulting in better protection against some forms of attack. It acts in addition to any armor the target is wearing.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88014;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Armor Factor by 35.";
-                    spell.Type = eSpellType.ArmorFactorBuff.ToString();
+                    spell.Type = eSpellType.SpecArmorFactorBuff.ToString();
                     spell.EffectGroup = 2;
 
                     m_specaf = new Spell(spell, 39);
@@ -660,9 +630,9 @@ namespace DOL.GS.Scripts
                     spell.Description = "Adds to the recipient's Armor Factor (AF), resulting in better protection against some forms of attack. It acts in addition to any armor the target is wearing.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 89014;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Message1 = "Increases target's Armor Factor by 35.";
-                    spell.Type = eSpellType.ArmorFactorBuff.ToString();
+                    spell.Type = eSpellType.SpecArmorFactorBuff.ToString();
                     spell.EffectGroup = 2;
 
                     m_casterspecaf = new Spell(spell, 39);
@@ -691,7 +661,7 @@ namespace DOL.GS.Scripts
                     spell.Message1 = "Increases the target's combat speed by 15.";
                     spell.Range = WorldMgr.VISIBILITY_DISTANCE;
                     spell.SpellID = 88010;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Type = eSpellType.CombatSpeedBuff.ToString();
                     spell.EffectGroup = 100;
 
@@ -723,7 +693,7 @@ namespace DOL.GS.Scripts
 					spell.Description = "Target regenerates power regeneration during the duration of the spell";
 					spell.Range = WorldMgr.VISIBILITY_DISTANCE;
 					spell.SpellID = 88008;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "PowerRegenBuff";
 					m_powereg = new Spell(spell, 50);
 				}
@@ -753,7 +723,7 @@ namespace DOL.GS.Scripts
 					spell.Description = "Target's melee attacks do additional damage.";
 					spell.Range = WorldMgr.VISIBILITY_DISTANCE;
 					spell.SpellID = 88009;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "DamageAdd";
 					m_dmgadd = new Spell(spell, 50);
 				}
@@ -782,7 +752,7 @@ namespace DOL.GS.Scripts
 					spell.Description = "Target regenerates the given amount of health every tick";
 					spell.Range = WorldMgr.VISIBILITY_DISTANCE;
 					spell.SpellID = 88011;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "HealthRegenBuff";
 					m_hpRegen = new Spell(spell, 50);
 				}
@@ -809,7 +779,7 @@ namespace DOL.GS.Scripts
 					spell.Description = "Heals the target.";
 					spell.Range = WorldMgr.VISIBILITY_DISTANCE;
 					spell.SpellID = 88013;
-					spell.Target = "Realm";
+					spell.Target = eSpellTarget.REALM.ToString();
 					spell.Type = "Heal";
 					m_heal = new Spell(spell, 50);
 				}
@@ -903,7 +873,7 @@ namespace DOL.GS.Scripts
 
             long totalValue = number * template.Price;
 
-            lock (player.Inventory)
+            lock (player.Inventory.Lock)
             {
 
                 if (player.GetCurrentMoney() < totalValue)
@@ -1210,7 +1180,7 @@ namespace DOL.GS.Items
 {
     public class BuffTokensEvent
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         [GameServerStartedEvent]
         public static void OnServerStartup(DOLEvent e, object sender, EventArgs args)

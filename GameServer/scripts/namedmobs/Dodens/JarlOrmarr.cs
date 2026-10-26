@@ -1,6 +1,5 @@
 using System;
 using DOL.AI.Brain;
-using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
 using DOL.GS.Scripts.DOL.AI.Brain;
@@ -19,13 +18,6 @@ namespace DOL.GS.Scripts
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(9918);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 	
 			// humanoid
 			BodyType = 6;
@@ -34,28 +26,16 @@ namespace DOL.GS.Scripts
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 			// right hand
-			VisibleActiveWeaponSlots = (byte) eActiveWeaponSlot.Standard;			
-			ScalingFactor = 40;
+			VisibleActiveWeaponSlots = (byte) eActiveWeaponSlot.Standard;
 			base.SetOwnBrain(new JarlOrmarrBrain());
 			LoadedFromScript = false; //load from database
 			SaveIntoDatabase();
-			base.AddToWorld();		
+			base.AddToWorld();
 			return true;
 		}
 		
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get
-			{
-				return 350;
-			}
-			set
-			{ }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -94,26 +74,10 @@ namespace DOL.GS.Scripts
 		{
 			base.ReturnToSpawnPoint(MaxSpeed);
 		}
-		public override void OnAttackedByEnemy(AttackData ad)
-		{
-			if (IsReturningToSpawnPoint)
-				return;
-
-			base.OnAttackedByEnemy(ad);
-		}
 
 		public override void Die(GameObject killer)
 		{
-			log.Debug($"{Name} killed by {killer.Name}");
-
 			GamePlayer playerKiller = killer as GamePlayer;
-
-			if (playerKiller?.Group != null)
-			{
-				foreach (GamePlayer groupPlayer in playerKiller.Group.GetPlayersInTheGroup())
-					AtlasROGManager.GenerateReward(groupPlayer,OrbsReward);
-			}
-
 			base.Die(killer);
 		}
 		[ScriptLoadedEvent]
@@ -149,7 +113,7 @@ namespace DOL.GS.Scripts
 			/// <param name="message">The message to be broadcast.</param>
 			public void BroadcastMessage(String message)
 			{
-				foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+				foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 				{
 					player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
 				}

@@ -1,26 +1,7 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using DOL.GS.Effects;
-using DOL.GS.Spells;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
@@ -30,78 +11,72 @@ namespace DOL.GS.PacketHandler
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-		protected override void WriteGroupMemberUpdate(GSTCPPacketOut pak, bool updateIcons, GameLiving living)
+		protected override void WriteGroupMemberUpdate(GSTCPPacketOut pak, GameLiving living)
 		{
 			pak.WriteByte((byte)(living.GroupIndex + 1)); // From 1 to 8
 			bool sameRegion = living.CurrentRegion == m_gameClient.Player.CurrentRegion;
-            GamePlayer player = null;
+            GamePlayer player;
 
 			if (sameRegion)
 			{
-
                 player = living as GamePlayer;
 
-                if (player != null)
-                    pak.WriteByte(player.CharacterClass.HealthPercentGroupWindow);
-                else
-                    pak.WriteByte(living.HealthPercent);
+				pak.WriteByte(player != null ? player.HealthPercentGroupWindow : living.HealthPercent);
 
 				pak.WriteByte(living.ManaPercent);
 				pak.WriteByte(living.EndurancePercent); // new in 1.69
 
 				byte playerStatus = 0;
-				if (!living.IsAlive)
+				if (living.Health <=0)
 					playerStatus |= 0x01;
 				if (living.IsMezzed)
 					playerStatus |= 0x02;
 				if (living.IsDiseased)
 					playerStatus |= 0x04;
-				if (SpellHelper.FindEffectOnTarget(living, "DamageOverTime") != null)
+				if (living.IsPoisoned)
 					playerStatus |= 0x08;
-				if (living is GamePlayer)
-				{
-					if ((living as GamePlayer).Client.ClientState == GameClient.eClientState.Linkdead)
-						playerStatus |= 0x10;
-				}
+				if (player?.Client.ClientState == GameClient.eClientState.Linkdead)
+					playerStatus |= 0x10;
 				if (!sameRegion)
 					playerStatus |= 0x20;
-				if (living.DebuffCategory[(int)eProperty.SpellRange] != 0 || living.DebuffCategory[(int)eProperty.ArcheryRange] != 0)
+				if (living.DebuffCategory[eProperty.SpellRange] != 0 || living.DebuffCategory[eProperty.ArcheryRange] != 0)
 					playerStatus |= 0x40;
 
 				pak.WriteByte(playerStatus);
 				// 0x00 = Normal , 0x01 = Dead , 0x02 = Mezzed , 0x04 = Diseased ,
 				// 0x08 = Poisoned , 0x10 = Link Dead , 0x20 = In Another Region, 0x40 - NS
-
-				if (updateIcons)
-				{
-					pak.WriteByte((byte)(0x80 | living.GroupIndex));
-					lock (living.EffectList)
-					{
-						byte i = 0;
-						foreach (IGameEffect effect in living.EffectList)
-							if (effect is GameSpellEffect)
-								i++;
-						pak.WriteByte(i);
-						foreach (IGameEffect effect in living.EffectList)
-							if (effect is GameSpellEffect)
-							{
-								pak.WriteByte(0);
-								pak.WriteShort(effect.Icon);
-							}
-					}
-				}
-				WriteGroupMemberMapUpdate(pak, living);
 			}
 			else
 			{
 				pak.WriteInt(0x20);
-				if (updateIcons)
-				{
-					pak.WriteByte((byte)(0x80 | living.GroupIndex));
-					pak.WriteByte(0);
-				}
+			}
+		}
+
+		protected override void WriteGroupMemberIconsUpdate(GSTCPPacketOut pak, GameLiving living)
+		{
+			pak.WriteByte((byte)(0x80 | living.GroupIndex));
+
+			if (living.CurrentRegion != m_gameClient.Player.CurrentRegion)
+			{
+				pak.WriteByte(0);
+				return;
+			}
+
+			lock (living.EffectList)
+			{
+				byte i = 0;
+				foreach (IGameEffect effect in living.EffectList)
+					if (effect is GameSpellEffect)
+						i++;
+				pak.WriteByte(i);
+				foreach (IGameEffect effect in living.EffectList)
+					if (effect is GameSpellEffect)
+					{
+						pak.WriteByte(0);
+						pak.WriteShort(effect.Icon);
+					}
 			}
 		}
 
@@ -110,42 +85,44 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 
-			using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.ConcentrationList)))
+			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ConcentrationList)))
 			{
-				lock (m_gameClient.Player.effectListComponent.ConcentrationEffectsLock)
+				List<ECSGameSpellEffect> concentrationEffects = m_gameClient.Player.effectListComponent.GetConcentrationEffects();
+				pak.WriteByte((byte) concentrationEffects.Count);
+				pak.WriteByte(0); // unknown
+				pak.WriteByte(0); // unknown
+				pak.WriteByte(0); // unknown
+
+				for (int i = 0; i < concentrationEffects.Count; i++)
 				{
-					pak.WriteByte((byte)(m_gameClient.Player.effectListComponent.ConcentrationEffects.Count));
+					IConcentrationEffect effect = concentrationEffects[i];
+					pak.WriteByte((byte) i);
 					pak.WriteByte(0); // unknown
-					pak.WriteByte(0); // unknown
-					pak.WriteByte(0); // unknown
-
-					var effects = m_gameClient.Player?.effectListComponent.ConcentrationEffects;
-
-					if (effects == null)
-						return;
-
-					for (int i = 0; i < effects.Count; i++)
-					{
-						IConcentrationEffect effect = effects[i];
-						pak.WriteByte((byte)i);
-						pak.WriteByte(0); // unknown
-						pak.WriteByte(effect.Concentration);
-						pak.WriteShort(effect.Icon);
-						if (effect.Name.Length > 14)
-							pak.WritePascalString(effect.Name.Substring(0, 12) + "..");
-						else
-							pak.WritePascalString(effect.Name);
-						if (effect.OwnerName.Length > 14)
-							pak.WritePascalString(effect.OwnerName.Substring(0, 12) + "..");
-						else
-							pak.WritePascalString(effect.OwnerName);
-					}
+					pak.WriteByte(effect.Concentration);
+					pak.WriteShort(effect.Icon);
+					WriteTruncatedName(pak, effect.Name);
+					WriteTruncatedName(pak, effect.OwnerName);
 				}
 
 				SendTCP(pak);
 			}
 
-			SendStatusUpdate(); // send status update for convenience, mostly the conc has changed
+			static void WriteTruncatedName(GSTCPPacketOut pak, ReadOnlySpan<char> text)
+			{
+				const int MAX_LENGTH = 14;
+				const int TRUNCATE_LENGTH = 12;
+
+				if (text.Length > MAX_LENGTH)
+				{
+					Span<char> buffer = stackalloc char[MAX_LENGTH];
+					text[..TRUNCATE_LENGTH].CopyTo(buffer);
+					buffer[12] = '.';
+					buffer[13] = '.';
+					pak.WritePascalString(buffer);
+				}
+				else
+					pak.WritePascalString(text);
+			}
 		}
 
 		/// <summary>

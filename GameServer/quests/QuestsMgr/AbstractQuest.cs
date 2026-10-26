@@ -1,22 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -28,7 +9,6 @@ using DOL.Events;
 using DOL.GS.Behaviour;
 using DOL.GS.PacketHandler;
 using DOL.Language;
-using log4net;
 
 namespace DOL.GS.Quests
 {
@@ -41,7 +21,7 @@ namespace DOL.GS.Quests
         /// <summary>
         /// Defines a logger for this class.
         /// </summary>
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// The level of the quest.
@@ -191,13 +171,11 @@ namespace DOL.GS.Quests
             m_questPlayer.Out.SendMessage(string.Format(LanguageMgr.GetTranslation(m_questPlayer.Client, "AbstractQuest.FinishQuest.Completed", Name)), eChatType.CT_ScreenCenter, eChatLoc.CL_SystemWindow);
 
             // Move quest from active list to finished list.
-            if (m_questPlayer.QuestList.TryRemove(this, out byte value))
-                m_questPlayer.AvailableQuestIndexes.Enqueue(value);
+            m_questPlayer.RemoveQuest(this, notifyPlayer: true);
 
             if (m_questPlayer.HasFinishedQuest(GetType()) == 0)
                 m_questPlayer.AddFinishedQuest(this);
 
-            m_questPlayer.Out.SendQuestRemove(value);
             m_questPlayer.SaveIntoDatabase();
         }
 
@@ -205,11 +183,9 @@ namespace DOL.GS.Quests
         {
             Step = -1;
 
-            if (m_questPlayer.QuestList.TryRemove(this, out byte value))
-                m_questPlayer.AvailableQuestIndexes.Enqueue(value);
+            m_questPlayer.RemoveQuest(this, notifyPlayer: true);
 
             DeleteFromDatabase();
-            m_questPlayer.Out.SendQuestRemove(value);
             m_questPlayer.Out.SendMessage(LanguageMgr.GetTranslation(m_questPlayer.Client, "AbstractQuest.AbortQuest"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
         }
 
@@ -262,16 +238,13 @@ namespace DOL.GS.Quests
             return false;
         }
 
-        public virtual void StartQuestActionTimer(GamePlayer player, eQuestCommand command, int seconds, string label = "")
+        public virtual void StartQuestActionTimer(GamePlayer player, eQuestCommand command, int seconds, string label = null)
         {
             if (player.QuestActionTimer == null)
             {
                 m_currentCommand = command;
                 AddActionHandlers(player);
-
-                if (label == "")
-                    label = Enum.GetName(typeof(eQuestCommand), command);
-
+                label ??= Enum.GetName(typeof(eQuestCommand), command);
                 player.Out.SendTimerWindow(label, seconds);
                 player.QuestActionTimer = new(player, new ECSGameTimer.ECSTimerCallback(QuestActionCallback), seconds * 1000);
             }
@@ -377,7 +350,7 @@ namespace DOL.GS.Quests
                 return;
             }
 
-            lock (player.Inventory)
+            lock (player.Inventory.Lock)
             {
                 DbInventoryItem item = player.Inventory.GetFirstItemByID(itemTemplate.Id_nb, eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
 
@@ -402,7 +375,7 @@ namespace DOL.GS.Quests
                 return;
             }
 
-            lock (player.Inventory)
+            lock (player.Inventory.Lock)
             {
                 if (item != null)
                 {
@@ -427,7 +400,7 @@ namespace DOL.GS.Quests
                 return 0;
             }
 
-            lock (player.Inventory)
+            lock (player.Inventory.Lock)
             {
                 DbInventoryItem item = player.Inventory.GetFirstItemByID(itemTemplate.Id_nb, eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack);
 
@@ -556,10 +529,7 @@ namespace DOL.GS.Quests
             DbInventoryItem item;
 
             if (itemTemplate is DbItemUnique)
-            {
-                GameServer.Database.AddObject(itemTemplate as DbItemUnique);
                 item = GameInventoryItem.Create(itemTemplate as DbItemUnique);
-            }
             else
                 item = GameInventoryItem.Create(itemTemplate);
 

@@ -35,8 +35,8 @@ namespace DOL.GS.Commands
             if (IsSpammingCommand(client.Player, "quest"))
                 return;
 
-            string message = "";
-            List<AbstractQuest> activeQuests = client.Player.QuestList.Keys.ToList();
+            string message = string.Empty;
+            List<AbstractQuest> activeQuests = client.Player.GetActiveQuests();
             List<AbstractQuest> finishedQuests = client.Player.GetFinishedQuests();
 
             if (activeQuests.Count == 0)
@@ -54,7 +54,7 @@ namespace DOL.GS.Commands
                         if (message.Length < 1500)
                             message += $"\n{quest.Name}";
                         else
-                            message += "";
+                            message += string.Empty;
                     }
                 }
                 else
@@ -76,7 +76,7 @@ namespace DOL.GS.Commands
                         if (message.Length < 1500)
                             message += string.Format("\n{0}", quest.Name);
                         else
-                            message += "";
+                            message += string.Empty;
                     }
                 }
                 else

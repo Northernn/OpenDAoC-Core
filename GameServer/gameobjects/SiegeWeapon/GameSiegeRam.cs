@@ -1,34 +1,11 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using DOL.GS.Keeps;
 using DOL.GS.PacketHandler;
 
 namespace DOL.GS
 {
-	/// <summary>
-	/// GameMovingObject is a base class for boats and siege weapons.
-	/// </summary>
 	public class GameSiegeRam : GameSiegeWeapon
 	{
-		public GameSiegeRam()
-			: base()
+		public GameSiegeRam() : base()
 		{
 			MeleeDamageType = eDamageType.Crush;
 			Name = "siege ram";
@@ -36,6 +13,7 @@ namespace DOL.GS
 			//AmmoType = 0x3B00;
 			//this.Effect = 0x8A1;
 			AmmoType = 0x26;
+			EnableToMove = false; // Disabled to prevent exploits (going through walls) and because rams are automatically placed in a correct position.
 			this.Model = 0xA2A;//0xA28
 			//TODO find all value for ram
 			ActionDelay = new int[]
@@ -54,8 +32,6 @@ namespace DOL.GS
 		{
 			return 0x9602;
 		}
-
-
 
 		public override int MAX_PASSENGERS
 		{
@@ -94,7 +70,7 @@ namespace DOL.GS
 				return;
 			}
 			//Range Check
-			if (!this.IsWithinRadius(Owner.TargetObject, AttackRange))
+			if (!this.IsWithinRadius(Owner.TargetObject, attackComponent.AttackRange))
 			{
 				if(Owner != null)
 					Owner.Out.SendMessage("You are too far away to attack " + Owner.TargetObject.Name, eChatType.CT_System, eChatLoc.CL_SystemWindow);
@@ -103,7 +79,7 @@ namespace DOL.GS
 			//Limit 2 Rams aimed at door at a time
 			//Check # of rams on the target
 			int ramsAimedAtTarget=0;
-			foreach (GameNPC npc in TargetObject.GetNPCsInRadius(600))
+			foreach (GameNPC npc in Owner.TargetObject.GetNPCsInRadius(600))
 			{
 				if(npc is GameSiegeRam ram)
 				{
@@ -122,7 +98,6 @@ namespace DOL.GS
 			}
 
 			base.Aim();
-
 		}
 
 		public override void Fire()
@@ -135,9 +110,8 @@ namespace DOL.GS
 					Owner.Out.SendMessage(target.Name + " is already destroyed!" , eChatType.CT_System,eChatLoc.CL_SystemWindow);
 				return;
 			}
-			
-			base.Fire();
 
+			base.Fire();
 		}
 
 		public override void DoDamage()
@@ -159,7 +133,7 @@ namespace DOL.GS
 			}
 
 			//todo good  distance check
-			if (!this.IsWithinRadius(target, AttackRange))
+			if (!this.IsWithinRadius(target, attackComponent.AttackRange))
 			{
 				if(Owner != null)
 					Owner.Out.SendMessage("You are too far away to attack " + target.Name, eChatType.CT_System, eChatLoc.CL_SystemWindow);
@@ -178,7 +152,7 @@ namespace DOL.GS
 			
 			target.TakeDamage(this, eDamageType.Crush, damageAmount, 0);
 			target.OnAttackedByEnemy(ad);
-		
+
 			if(Owner != null)
 			{
 				Owner.OnAttackEnemy(ad);
@@ -208,9 +182,6 @@ namespace DOL.GS
 
 		public override void ReleaseControl()
 		{
-			TargetObject=null; //reset aimed object when released. Prevent empty/bugged rams from taking space on the ram limit per door.
-			CurrentState &= ~eState.Aimed;
-			
 			base.ReleaseControl();
 			foreach (GamePlayer player in CurrentRiders)
 				player.DismountSteed(true);
@@ -265,7 +236,7 @@ namespace DOL.GS
 			}
 		}
 
-		public override int AttackRange
+		public override int MeleeAttackRange
 		{
 			get
 			{

@@ -11,7 +11,7 @@ namespace DOL.GS.Keeps
     /// </summary>
     public class GateKeeperIn : GameKeepGuard
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private List<DbKeepDoorTeleport> m_destinationsIn = new List<DbKeepDoorTeleport>();
         private const string type = "GateKeeperIn";
 
@@ -53,7 +53,7 @@ namespace DOL.GS.Keeps
 
             if (player.Client.Account.PrivLevel == 1)
             {
-                if (IsCasting || player.Realm != this.Realm || !player.IsAlive || player.IsStunned || player.IsMezzed || !IsWithinRadius(player, 350))
+                if (IsCasting || player.Realm != this.Realm || player.IsIncapacitated || !IsWithinRadius(player, 350))
                     return false;
             }
             this.LoadDestinations();
@@ -81,7 +81,7 @@ namespace DOL.GS.Keeps
 
             if (player.Client.Account.PrivLevel == 1)
             {
-                if (player.Realm != this.Realm || !player.IsAlive || player.IsStunned || player.IsMezzed || !IsWithinRadius(player, 350))
+                if (player.Realm != this.Realm || player.IsIncapacitated || !IsWithinRadius(player, 350))
                     return false;
             }
 
@@ -203,7 +203,7 @@ namespace DOL.GS.Keeps
     /// </summary>
     public class GateKeeperOut : GameKeepGuard
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private List<DbKeepDoorTeleport> m_destinationsOut = new List<DbKeepDoorTeleport>();
         private const string type = "GateKeeperOut";
 
@@ -245,7 +245,7 @@ namespace DOL.GS.Keeps
 
             if (player.Client.Account.PrivLevel == 1)
             {
-                if (IsCasting || player.Realm != this.Realm || !player.IsAlive || player.IsStunned || player.IsMezzed || !IsWithinRadius(player, 350))
+                if (IsCasting || player.Realm != this.Realm || player.IsIncapacitated || !IsWithinRadius(player, 350))
                     return false;
             }
 
@@ -274,7 +274,7 @@ namespace DOL.GS.Keeps
 
             if (player.Client.Account.PrivLevel == 1)
             {
-                if (player.Realm != this.Realm || !player.IsAlive || player.IsStunned || player.IsMezzed || !IsWithinRadius(player, 350))
+                if (player.Realm != this.Realm || player.IsIncapacitated || !IsWithinRadius(player, 350))
                     return false;
             }
 

@@ -1,21 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
 using System;
 using System.Collections;
 using DOL.Database;
@@ -25,8 +7,6 @@ namespace DOL.GS.Housing
 {
 	public class GameLotMarker : GameStaticItem
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
 		private DbHouse m_dbitem;
 
 		public GameLotMarker()
@@ -67,8 +47,8 @@ namespace DOL.GS.Housing
 
 			if (house != null)
 			{
-				//the player might be targeting a lot he already purchased that has no house on it yet
-				if (house.HouseNumber != DatabaseItem.HouseNumber && player.Client.Account.PrivLevel != (int)ePrivLevel.Admin)
+				// The player might be targeting a lot he already purchased that has no house on it yet.
+				if (house.HouseNumber != DatabaseItem.HouseNumber && (ePrivLevel) player.Client.Account.PrivLevel is not ePrivLevel.Admin)
 				{
 					ChatUtil.SendSystemMessage(player, "You already own a house!");
 					return false;
@@ -76,19 +56,13 @@ namespace DOL.GS.Housing
 			}
 
 			if (string.IsNullOrEmpty(DatabaseItem.OwnerID))
-			{
-				player.Out.SendCustomDialog("Do you want to buy this lot?\r\n It costs " + Money.GetString(HouseTemplateMgr.GetLotPrice(DatabaseItem)) + "!", BuyLot);
-			}
+				player.Out.SendCustomDialog($"Do you want to buy this lot?\nIt costs {Money.GetString(HouseTemplateMgr.GetLotPrice(DatabaseItem))}.\nYou won't be able to delete this character.", BuyLot);
 			else
 			{
 				if (HouseMgr.IsOwner(DatabaseItem, player))
-				{
 					player.Out.SendMerchantWindow(HouseTemplateMgr.GetLotMarkerItems(this), eMerchantWindowType.Normal);
-				}
 				else
-				{
 					ChatUtil.SendSystemMessage(player, "You do not own this lot!");
-				}
 			}
 
 			return true;
@@ -99,7 +73,7 @@ namespace DOL.GS.Housing
 			if (response != 0x01) 
 				return;
 
-			lock (DatabaseItem) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (DatabaseItem)
 			{
 				if (!string.IsNullOrEmpty(DatabaseItem.OwnerID))
 					return;
@@ -121,7 +95,7 @@ namespace DOL.GS.Housing
 				}
 				else
 				{
-					ChatUtil.SendMerchantMessage(player, "You dont have enough money!");
+					ChatUtil.SendMerchantMessage(player, "You don't have enough money!");
 				}
 			}
 		}
@@ -203,7 +177,7 @@ namespace DOL.GS.Housing
 				DatabaseItem.Emblem = player.Guild.Emblem;
 			}
 
-			var house = new House(DatabaseItem);
+			GameHouse house = new(DatabaseItem);
 			HouseMgr.AddHouse(house);
 
 			if (model != 0)

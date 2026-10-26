@@ -1,10 +1,4 @@
-using System;
-using System.Reflection;
-using System.Collections;
 using System.Collections.Generic;
-using DOL.GS;
-using DOL.GS.PacketHandler;
-using DOL.GS.Effects;
 using DOL.Database;
 using DOL.GS.Spells;
 
@@ -44,7 +38,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.ClientEffect = 11253;
             m_dbspell.Damage = 50;
             m_dbspell.DamageType = 11;
-            m_dbspell.Target = "Group";
+            m_dbspell.Target = eSpellTarget.GROUP.ToString();
             m_dbspell.Radius = 1500;
             m_dbspell.Type = eSpellType.AblativeArmor.ToString();
             m_dbspell.Value = 500;
@@ -56,7 +50,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.EffectGroup = 0; // stacks with other damage adds
             m_dbspell.Range = 0;
             m_spell = new Spell(m_dbspell, 0); // make spell level 0 so it bypasses the spec level adjustment code
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
 
         public override void Execute(GameLiving living)
@@ -75,12 +69,13 @@ namespace DOL.GS.RealmAbilities
         {
             if (target.IsAlive && m_spell != null)
             {
-                List<GameLiving> targets = new List<GameLiving>();
+                List<GameLiving> targets = GameLoop.GetListForTick<GameLiving>();
+
                 if (target.Group != null)
                 {
                     foreach (var living in target.Group.GetMembersInTheGroup())
                     {
-                        if (target.GetDistance(new Point2D(living.X, living.Y))  > m_spell.Radius) 
+                        if (target.IsWithinRadius(living, m_spell.Radius))
                             targets.Add(living);
                     }
                 }
@@ -94,7 +89,7 @@ namespace DOL.GS.RealmAbilities
                 }
             }
         }
-        
+
         public override IList<string> DelveInfo
         {
             get

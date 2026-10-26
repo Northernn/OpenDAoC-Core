@@ -35,21 +35,13 @@ namespace DOL.GS
         {
             get { return 100000; }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 350;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
                 return true;
-            if (IsReturningToSpawnPoint && keyName == GS.Abilities.DamageImmunity)
-                return true;
+
             return base.HasAbility(keyName);
         }
         public override void TakeDamage(GameObject source, eDamageType damageType, int damageAmount, int criticalAmount)
@@ -86,20 +78,11 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60160628);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Empathy = npcTemplate.Empathy;
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
-            EvernBrain.spawnfairy = false;
             //Idle = false;
             MaxSpeedBase = 300;
 
             Faction = FactionMgr.GetFactionByID(81);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(81));
             EvernBrain sbrain = new EvernBrain();
             SetOwnBrain(sbrain);
             LoadedFromScript = false; //load from database
@@ -139,7 +122,6 @@ namespace DOL.GS
                 CO.X = 429840;
                 CO.Y = 380396;
                 CO.Z = 2328;
-                CO.MaxDistance = 3500;
                 CO.TetherRange = 3800;
                 CO.MaxSpeedBase = 250;
                 CO.Heading = 4059;
@@ -155,7 +137,7 @@ namespace DOL.GS
             else
                 log.Warn("Evern exist ingame, remove it and restart server if you want to add by script code.");
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC npc in GetNPCsInRadius(8000))
             {
@@ -166,15 +148,16 @@ namespace DOL.GS
                         npc.Die(npc); //we kill all fairys if boss die
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
     }
 }
+
 namespace DOL.AI.Brain
 {
     public class EvernBrain : EpicBossBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public EvernBrain() : base()
         {
@@ -182,7 +165,7 @@ namespace DOL.AI.Brain
             AggroRange = 600;
             ThinkInterval = 1500;
         }
-        public static bool spawnfairy = false;
+        public bool spawnfairy = false;
         private bool RemoveAdds = false;
         public override void Think()
         {
@@ -265,10 +248,7 @@ namespace DOL.GS
         {
         }
         public override long ExperienceValue => 0;
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
+
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 400;
@@ -292,9 +272,7 @@ namespace DOL.GS
         {
             get { return 2000; }
         }
-        public override void DropLoot(GameObject killer)
-        {
-        }
+        public override bool CanDropLoot => false;
         public override short Dexterity { get => base.Dexterity; set => base.Dexterity = 200; }
         public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
         public override short Strength { get => base.Strength; set => base.Strength = 120; }
@@ -307,7 +285,6 @@ namespace DOL.GS
             Size = 50;
             Flags = eFlags.FLYING;
             Faction = FactionMgr.GetFactionByID(81);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(81));
             Level = (byte) Util.Random(50, 55);
             Gender = eGender.Female;
             EvernFairyBrain adds = new EvernFairyBrain();
@@ -317,11 +294,12 @@ namespace DOL.GS
         }
     }
 }
+
 namespace DOL.AI.Brain
 {
     public class EvernFairyBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public EvernFairyBrain()
             : base()
         {
@@ -332,7 +310,6 @@ namespace DOL.AI.Brain
         {
             Body.MaxSpeedBase = 0;
             Body.MoveTo(Body.CurrentRegionID, target.X, target.Y, target.Z, Body.Heading);
-            Body.CancelReturnToSpawnPoint();
 
             foreach(GameNPC evern in Body.GetNPCsInRadius(2500))
             {
@@ -410,11 +387,10 @@ namespace DOL.AI.Brain
                     spell.Name = "Heal";
                     spell.Range = 2500;
                     spell.SpellID = 11891;
-                    spell.Target = "Realm";
+                    spell.Target = eSpellTarget.REALM.ToString();
                     spell.Type = "Heal";
                     m_Fairy_Heal = new Spell(spell, 70);
                     spell.Uninterruptible = true;
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Fairy_Heal);
                 }
                 return m_Fairy_Heal;
             }

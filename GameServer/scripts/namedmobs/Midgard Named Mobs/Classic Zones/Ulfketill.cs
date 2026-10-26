@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
@@ -9,6 +10,7 @@ namespace DOL.GS
 	public class Ulfketill : GameEpicBoss
 	{
 		public Ulfketill() : base() { }
+		public readonly List<GameNPC> Jotuns = new List<GameNPC>();
 
 		[ScriptLoadedEvent]
 		public static void ScriptLoaded(DOLEvent e, object sender, EventArgs args)
@@ -26,15 +28,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -59,13 +54,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60167383);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
 
@@ -82,7 +70,7 @@ namespace DOL.AI.Brain
 {
 	public class UlfketillBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public UlfketillBrain() : base()
 		{
 			AggroLevel = 100;
@@ -98,7 +86,7 @@ namespace DOL.AI.Brain
 				FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
 				Body.Health = Body.MaxHealth;
 			}
-			if (UlfketillAdds.JotunsCount < 3 && !HasAggro)
+			if (!HasAggro && AliveJotunCount() < 3)
 			{
 				SpawnJotuns();
 			}
@@ -116,11 +104,29 @@ namespace DOL.AI.Brain
             }
 			base.Think();
 		}
+		private int AliveJotunCount()
+		{
+			if (Body is not Ulfketill ulfketill)
+				return 0;
+
+			int count = 0;
+			foreach (GameNPC npc in ulfketill.Jotuns)
+			{
+				if (npc != null && npc.IsAlive && npc.ObjectState is GameObject.eObjectState.Active)
+					++count;
+			}
+			return count;
+		}
 		private void SpawnJotuns()
 		{
+			if (Body is not Ulfketill ulfketill)
+				return;
+
+			ulfketill.Jotuns.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
+			int jotunsCount = ulfketill.Jotuns.Count;
 			for (int i = 0; i < 3; i++)
 			{
-				if (UlfketillAdds.JotunsCount < 3)
+				if (jotunsCount < 3)
 				{
 					UlfketillAdds add = new UlfketillAdds();
 					add.X = Body.X + Util.Random(-500, 500);
@@ -129,6 +135,8 @@ namespace DOL.AI.Brain
 					add.Heading = Body.Heading;
 					add.CurrentRegion = Body.CurrentRegion;
 					add.AddToWorld();
+					ulfketill.Jotuns.Add(add);
+					++jotunsCount;
 				}
 			}
 		}
@@ -154,10 +162,7 @@ namespace DOL.GS
 		{
 			return;
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
+
 		public override double GetArmorAF(eArmorSlot slot)
 		{
 			return 200;
@@ -173,7 +178,6 @@ namespace DOL.GS
 		}
 		public override short Quickness { get => base.Quickness; set => base.Quickness = 80; }
 		public override short Strength { get => base.Strength; set => base.Strength = 200; }
-		public static int JotunsCount = 0;
 		public override bool AddToWorld()
 		{
 			Model = 1770;
@@ -182,7 +186,6 @@ namespace DOL.GS
 			RespawnInterval = -1;
 			Level = (byte)Util.Random(50, 55);
 			MaxSpeedBase = 225;
-			++JotunsCount;
 
 			UlfketillAddsBrain sbrain = new UlfketillAddsBrain();
 			SetOwnBrain(sbrain);
@@ -190,14 +193,7 @@ namespace DOL.GS
 			base.AddToWorld();
 			return true;
 		}
-        public override void Die(GameObject killer)
-        {
-			--JotunsCount;
-            base.Die(killer);
-        }
-		public override void DropLoot(GameObject killer) //no loot
-		{
-		}
+		public override bool CanDropLoot => false;
 		public override long ExperienceValue => 0;
 	}
 }
@@ -205,7 +201,7 @@ namespace DOL.AI.Brain
 {
 	public class UlfketillAddsBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public UlfketillAddsBrain() : base()
 		{
 			AggroLevel = 100;

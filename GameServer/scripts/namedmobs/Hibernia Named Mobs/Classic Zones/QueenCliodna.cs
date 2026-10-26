@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 40;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -73,7 +66,6 @@ namespace DOL.GS
 			Model = 347;
 			Level = 70;
 			Size = 50;
-			MaxDistance = 2500;
 			TetherRange = 2600;
 
 			GameNpcInventoryTemplate template = new GameNpcInventoryTemplate();
@@ -103,7 +95,7 @@ namespace DOL.AI.Brain
 {
 	public class QueenCliodnaBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public QueenCliodnaBrain() : base()
 		{
 			AggroLevel = 100;
@@ -181,12 +173,11 @@ namespace DOL.AI.Brain
 					spell.Name = "Dark Blast";
 					spell.Range = 1500;
 					spell.SpellID = 11892;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.DirectDamageNoVariance.ToString();
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_CliodnaDD = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_CliodnaDD);
 				}
 				return m_CliodnaDD;
 			}
@@ -210,13 +201,12 @@ namespace DOL.AI.Brain
 					spell.Name = "Stun";
 					spell.Range = 1500;
 					spell.SpellID = 11893;
-					spell.Target = "Enemy";
+					spell.Target = eSpellTarget.ENEMY.ToString();
 					spell.Type = eSpellType.Stun.ToString();
 					spell.DamageType = (int)eDamageType.Energy;
 					spell.Uninterruptible = true;
 					spell.MoveCast = true;
 					m_Cliodna_stun = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Cliodna_stun);
 				}
 				return m_Cliodna_stun;
 			}
@@ -224,4 +214,3 @@ namespace DOL.AI.Brain
 		#endregion
 	}
 }
-

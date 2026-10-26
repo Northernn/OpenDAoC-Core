@@ -1,22 +1,3 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -25,16 +6,15 @@ using DOL.Database;
 using DOL.GS.PacketHandler;
 using DOL.GS.ServerProperties;
 using DOL.Language;
-using log4net;
 
 namespace DOL.GS
 {
-	/// <summary>
-	/// AbstractCraftingSkill is the base class for all crafting skill
-	/// </summary>
-	public abstract class AbstractCraftingSkill
+    /// <summary>
+    /// AbstractCraftingSkill is the base class for all crafting skill
+    /// </summary>
+    public abstract class AbstractCraftingSkill
 	{
-		protected static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		protected static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		private bool finishedCraft = false; 
 		#region Declaration
@@ -75,13 +55,6 @@ namespace DOL.GS
 
 		public const int subSkillCap = 1300;
 
-		public virtual string CRAFTER_TITLE_PREFIX
-		{
-			get
-			{
-				return "";
-			}
-		}
 		public eCraftingSkill eSkill
 		{
 			get
@@ -134,7 +107,7 @@ namespace DOL.GS
 			int craftingTime = GetCraftingTime(player, recipe);
 
 			var chanceToMakeItem = CalculateChanceToMakeItem(player, recipe.Level);
-			player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "AbstractCraftingSkill.CraftItem.BeginWork", recipe.Product.Name, chanceToMakeItem.ToString()), eChatType.CT_Missed, eChatLoc.CL_SystemWindow);
+			player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "AbstractCraftingSkill.CraftItem.BeginWork", recipe.Product.Name, chanceToMakeItem.ToString()), eChatType.CT_Action, eChatLoc.CL_SystemWindow);
 			player.Out.SendTimerWindow(LanguageMgr.GetTranslation(player.Client.Account.Language, "AbstractCraftingSkill.CraftItem.CurrentlyMaking", recipe.Product.Name), craftingTime);
 
 			player.Stealth(false);
@@ -162,7 +135,7 @@ namespace DOL.GS
 		protected virtual bool CanPlayerStartToCraftItem(GamePlayer player, Recipe recipe)
 		{
 			
-			player.TempProperties.SetProperty("RecipeToCraft", recipe);
+			player.TempProperties.SetProperty(CraftAction.RECIPE_TO_CRAFT_PROPERTY, recipe);
 			
 			if (!GameServer.ServerRules.IsAllowedToCraft(player, recipe.Product))
 			{
@@ -278,7 +251,7 @@ namespace DOL.GS
 			ArrayList missingMaterials = null;
 
 			long totalPrice = 0;
-			lock (player.Inventory)
+			lock (player.Inventory.Lock)
 			{
 				foreach (var ingredient in recipe.Ingredients)
 				{
@@ -392,7 +365,7 @@ namespace DOL.GS
 		{
 			Dictionary<int, int?> dataSlots = new Dictionary<int, int?>(10);
 
-			lock (player.Inventory)
+			lock (player.Inventory.Lock)
 			{
 				foreach (var ingredient in recipe.Ingredients)
 				{
@@ -462,7 +435,7 @@ namespace DOL.GS
 
 			Dictionary<int, int> changedSlots = new Dictionary<int, int>(5); // key : > 0 inventory ; < 0 ground || value: < 0 = new item count; > 0 = add to old
 
-			lock (player.Inventory)
+			lock (player.Inventory.Lock)
 			{
 				int count = product.PackSize < 1 ? 1 : product.PackSize;
 				foreach (DbInventoryItem item in player.Inventory.GetItemRange(eInventorySlot.FirstBackpack, eInventorySlot.LastBackpack))
@@ -532,7 +505,6 @@ namespace DOL.GS
 				else
 				{
 					DbItemUnique unique = new DbItemUnique(product);
-					GameServer.Database.AddObject(unique);
 					newItem = GameInventoryItem.Create(unique);
 					newItem.Quality = GetQuality(player, recipe.Level);
 				}
@@ -555,7 +527,7 @@ namespace DOL.GS
 
 			player.Inventory.CommitChanges();
 
-			player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "AbstractCraftingSkill.BuildCraftedItem.Successfully", product.Name, newItem.Quality), eChatType.CT_Missed, eChatLoc.CL_SystemWindow);
+			player.Out.SendMessage(LanguageMgr.GetTranslation(player.Client.Account.Language, "AbstractCraftingSkill.BuildCraftedItem.Successfully", product.Name, newItem.Quality), eChatType.CT_Action, eChatLoc.CL_SystemWindow);
 
 			if (recipe.IsForUniqueProduct && newItem.Quality == 100)
 			{
@@ -654,6 +626,9 @@ namespace DOL.GS
 		}
 		public virtual int GetCraftingTime(GamePlayer player, Recipe recipe)
 		{
+			if ((ePrivLevel) player.Client.Account.PrivLevel >= ePrivLevel.GM)
+				return 0;
+
 			double baseMultiplier = (recipe.Level / 100) + 1;
 			if (baseMultiplier < 1) baseMultiplier = 1;
 
@@ -666,10 +641,6 @@ namespace DOL.GS
 			}
 
 			var divisorMod = 4;
-			var loyalDays = LoyaltyManager.GetPlayerRealmLoyalty(player).Days;
-			if ( loyalDays > 30) divisorMod++;
-			if ( loyalDays > 20) divisorMod++;
-			if ( loyalDays > 10) divisorMod++;
 			int craftingTime = (int)(baseMultiplier * materialsCount / divisorMod);
 
 			// Player does check for capital city bonus as well

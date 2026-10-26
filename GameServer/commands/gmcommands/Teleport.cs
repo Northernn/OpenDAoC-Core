@@ -23,10 +23,8 @@ using DOL.Language;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using DOL.GS.Utils;
 using DOL.GS.Quests;
 using DOL.GS.PacketHandler.Client.v168;
-using log4net;
 
 namespace DOL.GS.Commands
 {
@@ -42,7 +40,7 @@ namespace DOL.GS.Commands
 		"'/teleport reload' reload all teleport locations from the db")]
     public class TeleportCommandHandler : AbstractCommandHandler, ICommandHandler
     {
-		private static readonly ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
         /// Handle command.
@@ -67,7 +65,7 @@ namespace DOL.GS.Commands
                             return;
                         }
 
-                        if (args[2] == "")
+                        if (args[2] == string.Empty)
                         {
                             client.Out.SendMessage("You must specify a teleport ID.", eChatType.CT_System, eChatLoc.CL_SystemWindow);
                             return;

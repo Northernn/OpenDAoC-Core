@@ -2,7 +2,6 @@ namespace DOL.GS
 {
     public enum eEffect
     {
-        
         #region Positive Effects
         //positive effects
         Bladeturn,
@@ -18,17 +17,21 @@ namespace DOL.GS
         CombatHeal,
 
         //stats
-        PaladinAf,
         StrengthBuff,
         DexterityBuff,
         ConstitutionBuff,
         QuicknessBuff,
-        StrengthConBuff,
-        DexQuickBuff,
+        StrConBuff,
+        DexQuiBuff,
         AcuityBuff,
-        SpecAFBuff,
         BaseAFBuff,
-        ArmorAbsorptionBuff,
+        SpecAFBuff,
+        PaladinAf,
+        PhysicalAbsorptionBuff,
+        EvadeBuff,
+        SavageStyleEvadeBuff,
+        ParryBuff,
+        SavageStyleParryBuff,
 
         //resists
         BodyResistBuff,
@@ -69,7 +72,6 @@ namespace DOL.GS
         StunImmunity,
         Mez,
         MezImmunity,
-        MeleeSnare,
         Snare,
         SnareImmunity,
         Nearsight,
@@ -110,7 +112,6 @@ namespace DOL.GS
         MesmerizeDurationBuff,
         FatigueConsumptionBuff,
         FatigueConsumptionDebuff,
-        SavageBuff,
         Pet,
         OffensiveProc,
         DefensiveProc,

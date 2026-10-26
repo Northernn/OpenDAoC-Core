@@ -1,18 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using DOL.Database;
 using DOL.GS.Styles;
-using log4net;
 
 namespace DOL.GS.PacketHandler
 {
 	[PacketLib(1112, GameClient.eClientVersion.Version1112)]
 	public class PacketLib1112 : PacketLib1111
 	{
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
 		/// <summary>
 		/// Constructs a new PacketLib for Client Version 1.112
 		/// </summary>
@@ -22,13 +18,13 @@ namespace DOL.GS.PacketHandler
 		{
 		}
 
-		public override void SendUpdatePlayerSkills()
+		public override void SendUpdatePlayerSkills(bool updateInternalCache)
 		{
 			if (m_gameClient.Player == null)
 				return;
 
 			// Get Skills as "Usable Skills" which are in network order ! (with forced update)
-			List<Tuple<Skill, Skill>> usableSkills = m_gameClient.Player.GetAllUsableSkills(true);
+			var usableSkills = m_gameClient.Player.GetAllUsableSkills(updateInternalCache);
 
 			bool sent = false; // set to true once we can't send packet anymore !
 			int index = 0; // index of our position in the list !
@@ -38,7 +34,7 @@ namespace DOL.GS.PacketHandler
 			{
 				int packetEntry = 0; // needed to tell client how much skill we send
 									 // using pak
-				using (GSTCPPacketOut pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VariousUpdate)))
+				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VariousUpdate)))
 				{
 					// Write header
 					pak.WriteByte(0x01); //subcode for skill
@@ -179,7 +175,7 @@ namespace DOL.GS.PacketHandler
 			}
 
 			// Send List Cast Spells...
-			SendNonHybridSpellLines();
+			SendNonHybridSpellLines(updateInternalCache);
 			// clear trainer cache
 			m_gameClient.TrainerSkillCache = null;
 
@@ -190,19 +186,19 @@ namespace DOL.GS.PacketHandler
 		/// <summary>
 		/// Send non hybrid and advanced spell lines
 		/// </summary>
-		public override void SendNonHybridSpellLines()
+		public override void SendNonHybridSpellLines(bool updateInternalCache)
 		{
 			GamePlayer player = m_gameClient.Player;
 			if (player == null)
 				return;
 
-			List<Tuple<SpellLine, List<Skill>>> spellsXLines = player.GetAllUsableListSpells(true);
+			var spellsXLines = player.GetAllUsableListSpells(true);
 
 			int lineIndex = 0;
 			foreach (var spXsl in spellsXLines)
 			{
 				// Prepare packet
-				using (var pak = new GSTCPPacketOut(GetPacketCode(eServerPackets.VariousUpdate)))
+				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VariousUpdate)))
 				{
 					// Add Line Header
 					pak.WriteByte(0x02); //subcode
@@ -249,7 +245,7 @@ namespace DOL.GS.PacketHandler
 			}
 
 			// Footer packet
-			using (GSTCPPacketOut pak3 = new GSTCPPacketOut(GetPacketCode(eServerPackets.VariousUpdate)))
+			using (var pak3 = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VariousUpdate)))
 			{
 				pak3.WriteByte(0x02); //subcode
 				pak3.WriteByte(0x00);
@@ -463,47 +459,36 @@ namespace DOL.GS.PacketHandler
 
 			ushort icon1 = 0;
 			ushort icon2 = 0;
-			string spell_name1 = "";
-			string spell_name2 = "";
-			if (item.Object_Type != (int)eObjectType.AlchemyTincture)
+			string spell_name1 = string.Empty;
+			string spell_name2 = string.Empty;
+
+			if ((eObjectType) item.Object_Type is not eObjectType.AlchemyTincture)
 			{
-				if (item.SpellID > 0/* && item.Charges > 0*/)
+				if (item.SpellID > 0)
 				{
-					SpellLine chargeEffectsLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
-					if (chargeEffectsLine != null)
+					Spell spell = SkillBase.GetSpellByID(item.SpellID);
+
+					if (spell != null)
 					{
-						List<Spell> spells = SkillBase.GetSpellList(chargeEffectsLine.KeyName);
-						foreach (Spell spl in spells)
-						{
-							if (spl.ID == item.SpellID)
-							{
-								flag |= 0x08;
-								icon1 = spl.Icon;
-								spell_name1 = spl.Name; // or best spl.Name ?
-								break;
-							}
-						}
+						flag |= 0x08;
+						icon1 = spell.Icon;
+						spell_name1 = spell.Name;
 					}
 				}
-				if (item.SpellID1 > 0/* && item.Charges > 0*/)
+
+				if (item.SpellID1 > 0)
 				{
-					SpellLine chargeEffectsLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
-					if (chargeEffectsLine != null)
+					Spell spell = SkillBase.GetSpellByID(item.SpellID1);
+
+					if (spell != null)
 					{
-						List<Spell> spells = SkillBase.GetSpellList(chargeEffectsLine.KeyName);
-						foreach (Spell spl in spells)
-						{
-							if (spl.ID == item.SpellID1)
-							{
-								flag |= 0x10;
-								icon2 = spl.Icon;
-								spell_name2 = spl.Name; // or best spl.Name ?
-								break;
-							}
-						}
+						flag |= 0x10;
+						icon2 = spell.Icon;
+						spell_name2 = spell.Name;
 					}
 				}
 			}
+
 			pak.WriteByte((byte)flag);
 			if ((flag & 0x08) == 0x08)
 			{
@@ -526,10 +511,13 @@ namespace DOL.GS.PacketHandler
 				else
 					name += "[" + Money.GetString(item.SellPrice) + "]";
 			}
-			if (name == null) name = "";
-			if (name.Length > 55)
-				name = name.Substring(0, 55);
-			pak.WritePascalString(name);
+
+			ReadOnlySpan<char> nameSpan = name == null ? [] : name;
+
+			if (nameSpan.Length > MAX_NAME_LENGTH)
+				nameSpan = nameSpan[..MAX_NAME_LENGTH];
+
+			pak.WritePascalString(nameSpan);
 		}
 	}
 }

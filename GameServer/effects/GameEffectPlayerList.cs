@@ -1,26 +1,8 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using log4net;
+using System.Threading;
 
 namespace DOL.GS.Effects
 {
@@ -28,17 +10,18 @@ namespace DOL.GS.Effects
 	/// Sends updates only for changed effects
 	/// when iterating over this effect list lock the list!
 	/// </summary>
+	[Obsolete("Old DoL system, newer effects and spell handlers must use ECSGameEffect and EffectListComponent")]
 	public class GameEffectPlayerList : GameEffectList
 	{
 		/// <summary>
 		/// Defines a logger for this class.
 		/// </summary>
-		private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
 		/// Lock object for Change Update
 		/// </summary>
-		private readonly object m_changedLock = new object();		
+		private readonly Lock m_changedLock = new();
 		/// <summary>
 		/// Holds the list of changed effects
 		/// </summary>
@@ -70,7 +53,7 @@ namespace DOL.GS.Effects
 				{
 					if (player.Group != null)
 					{
-						player.Group.UpdateMember(player, true, false);
+						player.Group.UpdateMemberIcons(player, false);
 					}
 				}
 				
@@ -94,7 +77,7 @@ namespace DOL.GS.Effects
 				{
 					if (player.Group != null)
 					{
-						player.Group.UpdateMember(player, true, false);
+						player.Group.UpdateMemberIcons(player, false);
 					}
 				}
 				
@@ -112,7 +95,7 @@ namespace DOL.GS.Effects
 			if (changedEffect.Icon == 0)
 				return;
 			
-			lock (m_changedLock) // Mannen 10:56 PM 10/30/2006 - Fixing every lock(this)
+			lock (m_changedLock)
 			{
 				if (!m_changedEffects.Contains(changedEffect))
 					m_changedEffects.Add(changedEffect);

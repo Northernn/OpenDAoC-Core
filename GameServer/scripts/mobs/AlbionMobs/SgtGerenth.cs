@@ -1,5 +1,6 @@
 ﻿using DOL.AI.Brain;
 using DOL.GS;
+using DOL.GS.PacketHandler;
 
 namespace DOL.GS
 {
@@ -11,20 +12,12 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(12123);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 
 			SirGerenthBrain sbrain = new SirGerenthBrain();
 			SetOwnBrain(sbrain);
 			LoadedFromScript = false;//load from database
 			SaveIntoDatabase();
-			base.AddToWorld();
-			return true;
+			return base.AddToWorld();
 		}
 	}
 }
@@ -32,28 +25,16 @@ namespace DOL.AI.Brain
 {
 	public class SirGerenthBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public SirGerenthBrain() : base()
 		{
 			AggroLevel = 40;
 			AggroRange = 400;
-			ThinkInterval = 1000;
 		}
 		public override void Think()
 		{
-			if (HasAggro && Body.TargetObject != null)
-			{
-				if (Body.HealthPercent <= 66)
-				{
-					foreach (GameNPC npc in Body.GetNPCsInRadius(1500))
-					{
-						if (npc != null && npc.IsAlive && npc.PackageID == "SirGerenthBaf")
-							AddAggroListTo(npc.Brain as StandardMobBrain);
-					}
-				}
-			}
+			if (Body.HealthPercent <= 66 && PullFriends("SirGerenthBaf", 1500) > 0)
+				Message.MessageToArea(Body, "Sir Gerenth shouts, 'Rally to me, soldiers of Albion!'", eChatType.CT_Say, eChatLoc.CL_ChatWindow, WorldMgr.VISIBILITY_DISTANCE);
 			base.Think();
 		}
 	}
 }
-

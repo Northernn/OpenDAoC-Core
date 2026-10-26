@@ -8,14 +8,12 @@ using DOL.Events;
 using DOL.GS;
 using DOL.GS.PacketHandler;
 using DOL.GS.ServerProperties;
-using log4net;
 
 namespace DOL.GS.Scripts
 {
     public class Legion : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static IArea legionArea = null;
 
@@ -84,15 +82,11 @@ namespace DOL.GS.Scripts
             Empathy = npcTemplate.Empathy;
             Piety = npcTemplate.Piety;
             Intelligence = npcTemplate.Intelligence;
-            LegionBrain.CanThrow = false;
-            LegionBrain.RemoveAdds = false;
-            LegionBrain.IsCreatingSouls = false;
 
             // demon
             BodyType = 2;
             RespawnInterval = Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(191);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
 
             LegionBrain sBrain = new LegionBrain();
             SetOwnBrain(sBrain);
@@ -101,15 +95,8 @@ namespace DOL.GS.Scripts
             return true;
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -117,7 +104,7 @@ namespace DOL.GS.Scripts
 
             return base.HasAbility(keyName);
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC npc in GetNPCsInRadius(5000))
             {
@@ -153,12 +140,12 @@ namespace DOL.GS.Scripts
                 TempProperties.RemoveProperty("legion_castaoe");
             }
 
-            base.Die(killer);
-
             if (canReportNews)
             {
                 ReportNews(killer);
             }
+
+            base.ProcessDeath(killer);
         }
         public void BroadcastMessage(String message)
         {
@@ -290,8 +277,6 @@ namespace DOL.GS.Scripts
             foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.KillsLegion++;
-                player.Achieve(AchievementUtils.AchievementNames.Legion_Kills);
-                player.RaiseRealmLoyaltyFloor(1);
                 count++;
             }
             return count;
@@ -309,7 +294,7 @@ namespace DOL.AI.Brain
 {
     public class LegionBrain : EpicBossBrain
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
         
         public LegionBrain()
             : base()
@@ -317,62 +302,18 @@ namespace DOL.AI.Brain
             AggroLevel = 100;
             AggroRange = 850;
         }
-        public static bool RemoveAdds = false;
-        public static bool IsCreatingSouls = false;
-        public static bool CanThrow = false;
-        public static bool CanPbaoe = false;
-        #region Health check bools
-        public static bool adds1 = false;
-        public static bool adds2 = false;
-        public static bool adds3 = false;
-        public static bool adds4 = false;
-        public static bool adds5 = false;
-        public static bool adds6 = false;
-        public static bool adds7 = false;
-        public static bool adds8 = false;
-        public static bool adds9 = false;
-        public static bool adds10 = false;
-        public static bool adds11 = false;
-        public static bool adds12 = false;
-        public static bool adds13 = false;
-        public static bool adds14 = false;
-        public static bool adds15 = false;
-        public static bool adds16 = false;
-        public static bool adds17 = false;
-        public static bool adds18 = false;
-        public static bool adds19 = false;
-        #endregion
+        private bool RemoveAdds = false;
+        private bool CanThrow = false;
+        private bool CanPbaoe = false;
+        private readonly bool[] addsSpawned = new bool[19];
 
         public override void Think()
         {
             if(!CheckProximityAggro())
             {
-                IsCreatingSouls = false;
                 CanThrow = false;
-                #region Health check bools
-                adds1 = false;
-                adds2 = false;
-                adds3 = false;
-                adds4 = false;
-                adds5 = false;
-                adds6 = false;
-                adds7 = false;
-                adds8 = false;
-                adds9 = false;
-                adds10 = false;
-                adds11 = false;
-                adds12 = false;
-                adds13 = false;
-                adds14 = false;
-                adds15 = false;
-                adds16 = false;
-                adds17 = false;
-                adds18 = false;
-                adds19 = false;
-                #endregion
+                Array.Clear(addsSpawned, 0, addsSpawned.Length);
 
-                if (Port_Enemys.Count > 0)//clear port players
-                    Port_Enemys.Clear();
                 if (randomlyPickedPlayers.Count > 0)//clear randomly picked players
                     randomlyPickedPlayers.Clear();
 
@@ -414,138 +355,15 @@ namespace DOL.AI.Brain
                     CanPbaoe = true;
                 }
                 #region Legion health checks
-                if (Body.HealthPercent <= 95 && Body.HealthPercent > 90 && !adds1)
+                int healthPercent = Body.HealthPercent;
+                for (int i = 0; i < addsSpawned.Length; i++)
                 {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds1 = true;
-                }
-                if (Body.HealthPercent <= 90 && Body.HealthPercent > 85 && !adds2)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds2 = true;
-                }
-                if (Body.HealthPercent <= 85 && Body.HealthPercent > 80 && !adds3)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds3 = true;
-                }
-                if (Body.HealthPercent <= 80 && Body.HealthPercent > 75 && !adds4)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds4 = true;
-                }
-                if (Body.HealthPercent <= 75 && Body.HealthPercent > 70 && !adds5)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds5 = true;
-                }
-                if (Body.HealthPercent <= 70 && Body.HealthPercent > 65 && !adds6)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds6 = true;
-                }
-                if (Body.HealthPercent <= 65 && Body.HealthPercent > 60 && !adds7)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds7 = true;
-                }
-                if (Body.HealthPercent <= 60 && Body.HealthPercent > 55 && !adds8)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds8 = true;
-                }
-                if (Body.HealthPercent <= 55 && Body.HealthPercent > 50 && !adds9)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds9 = true;
-                }
-                if (Body.HealthPercent <= 50 && Body.HealthPercent > 45 && !adds10)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds10 = true;
-                }
-                if (Body.HealthPercent <= 45 && Body.HealthPercent > 40 && !adds11)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds11 = true;
-                }
-                if (Body.HealthPercent <= 40 && Body.HealthPercent > 35 && !adds12)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds12 = true;
-                }
-                if (Body.HealthPercent <= 35 && Body.HealthPercent > 30 && !adds13)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds13 = true;
-                }
-                if (Body.HealthPercent <= 30 && Body.HealthPercent > 25 && !adds14)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds14 = true;
-                }
-                if (Body.HealthPercent <= 25 && Body.HealthPercent > 20 && !adds15)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds15 = true;
-                }
-                if (Body.HealthPercent <= 20 && Body.HealthPercent > 15 && !adds16)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds16 = true;
-                }
-                if (Body.HealthPercent <= 15 && Body.HealthPercent > 10 && !adds17)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds17 = true;
-                }
-                if (Body.HealthPercent <= 10 && Body.HealthPercent > 5 && !adds18)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds18 = true;
-                }
-                if (Body.HealthPercent <= 5 && Body.HealthPercent > 0 && !adds19)
-                {
-                    SpawnAdds();
-                    spawnAmount = 0;
-                    PlayerCountInLegionLair = 0;
-                    adds19 = true;
+                    int upperBound = 95 - i * 5;
+                    if (healthPercent <= upperBound && healthPercent > upperBound - 5 && !addsSpawned[i])
+                    {
+                        SpawnAdds();
+                        addsSpawned[i] = true;
+                    }
                 }
                 #endregion
                 if (!CanThrow)
@@ -564,18 +382,21 @@ namespace DOL.AI.Brain
             if (Body.TargetObject != null && HasAggro)
             {
                 GameLiving target = Body.TargetObject as GameLiving;
+
                 if (Util.Chance(100))
                 {
                     if (target.effectListComponent.ContainsEffectForEffectType(eEffect.Bladeturn) && target != null && target.IsAlive)
                     {
-                        var effect = EffectListService.GetEffectOnTarget(target, eEffect.Bladeturn);
+                        ECSGameEffect effect = EffectListService.GetEffectOnTarget(target, eEffect.Bladeturn);
+
                         if (effect != null)
                         {
-                            EffectService.RequestImmediateCancelEffect(effect);//remove bladeturn effect here
+                            effect.End();//remove bladeturn effect here
                             bladeturnConsumed++;
-                            if(target is GamePlayer player)
+
+                            if (target is GamePlayer player)
                             {
-                                if (player != null && player.IsAlive)
+                                if (player.IsAlive)
                                     player.Out.SendMessage("Legion consume your bladeturn effect!", eChatType.CT_Say, eChatLoc.CL_ChatWindow);
                             }
                         }
@@ -600,25 +421,25 @@ namespace DOL.AI.Brain
             CanPbaoe = false;
             return 0;
         }
-        public static int PlayerCountInLegionLair = 0;
-        public static int spawnAmount = 0;
         private void SpawnAdds()
         {
+            int playerCountInLegionLair = 0;
+            int spawnAmount = 0;
             if (Body.InCombat && Body.IsAlive && HasAggro)
             {
                 foreach (GamePlayer playerNearby in Body.GetPlayersInRadius(2000))
                 {
                     if (playerNearby != null && playerNearby.Client.Account.PrivLevel == 1)
                     {
-                        PlayerCountInLegionLair++;
+                        playerCountInLegionLair++;
                     }
-                    if (PlayerCountInLegionLair < 4)
+                    if (playerCountInLegionLair < 4)
                         spawnAmount = 1;
-                    if (PlayerCountInLegionLair > 4)
-                        spawnAmount = PlayerCountInLegionLair / 4;
+                    if (playerCountInLegionLair > 4)
+                        spawnAmount = playerCountInLegionLair / 4;
                 }
             }
-            if (PlayerCountInLegionLair > 0 && spawnAmount > 0)
+            if (playerCountInLegionLair > 0 && spawnAmount > 0)
             {
                 //log.Warn("PlayerCountInLegionLair = " + PlayerCountInLegionLair + " and spawnAmount = "+ spawnAmount);
                 for (int i = 0; i < spawnAmount; i++)
@@ -630,65 +451,35 @@ namespace DOL.AI.Brain
                     add.Y = Body.Y + Util.Random(-150, 150);
                     add.Z = Body.Z;
                     add.CurrentRegionID = 249;
-                    add.IsWorthReward = false;
                     add.Level = (byte)level;
                     add.AddToWorld();
                 }
             }
         }
         #region Legion Port
-        List<GamePlayer> Port_Enemys = new List<GamePlayer>();
         List<GamePlayer> randomlyPickedPlayers = new List<GamePlayer>();
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_ChatWindow);
             }
         }
-        public static List<t> GetRandomElements<t>(IEnumerable<t> list, int elementsCount)//pick X elements from list
-        {
-            return list.OrderBy(x => Guid.NewGuid()).Take(elementsCount).ToList();
-        }
-        private static int topPlayersToIngore = 5;//we determine here how many players from top aggro table will be ignored in teleporting
-        private static Random random = new Random();
+
         private int ThrowPlayer(ECSGameTimer timer)
         {
             if (Body.IsAlive && HasAggro)
             {
-                IDictionary<GameLiving, AggroAmount> aggroList = (Body.Brain as LegionBrain).AggroList;
-                IOrderedEnumerable<KeyValuePair<GameLiving, AggroAmount>> tempAggroTable = aggroList.OrderByDescending(x => x.Value.Effective).Skip(topPlayersToIngore).OrderBy(x => random.Next());
-                foreach(KeyValuePair<GameLiving, AggroAmount> items in tempAggroTable)
+                // From an ordered aggro list, ignore the first 5 entities. Then take 8~16 random players
+                var randomlyPickedPlayers = GetOrderedAggroList(5).OfType<GamePlayer>().Where(x =>
                 {
-                    if (items.Key != null && items.Key.IsAlive && items.Key is GamePlayer player)
-                    {
-                        if (!Port_Enemys.Contains(player))
-                        {
-                            Port_Enemys.Add(player);
-                            //log.Debug($"Adding player: Name = {player.Name}");
-                        }
-                    }
-                }
+                    return x.Client.Account.PrivLevel == 1 && x.IsWithinRadius(Body, 2500);
+                }).OrderBy(static x => Util.Random(int.MaxValue - 1)).Take(Util.Random(8, 16));
 
-                if (Port_Enemys.Count > 0)
-                {
-                    randomlyPickedPlayers = GetRandomElements(Port_Enemys, Util.Random(8, 16));//pick 5-8players from list to new list
+                foreach (GamePlayer player in randomlyPickedPlayers)
+                    player.MoveTo(249, 48200, 49566, 20833, 1028);
 
-                    if (randomlyPickedPlayers.Count > 0)
-                    {
-                        foreach (GamePlayer player in randomlyPickedPlayers)
-                        {
-                            if (player != null && player.IsAlive && player.Client.Account.PrivLevel == 1 && HasAggro && player.IsWithinRadius(Body, 2500))
-                            {
-                                player.MoveTo(249, 48200, 49566, 20833, 1028);
-                                //player.BroadcastUpdate();
-                            }
-                        }
-                        randomlyPickedPlayers.Clear();//clear list after port
-                    }
-                }
                 CanThrow = false;// set to false, so can throw again
-                Port_Enemys.Clear();
             }
             return 0;
         }
@@ -714,10 +505,9 @@ namespace DOL.AI.Brain
                     spell.Range = 0;
                     spell.Radius = 1000;
                     spell.SpellID = 12013;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = eSpellType.DirectDamageNoVariance.ToString();
                     m_LegionLifetapAoe = new Spell(spell, 60);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_LegionLifetapAoe);
                 }
                 return m_LegionLifetapAoe;
             }
@@ -730,8 +520,7 @@ namespace DOL.GS
 {
     public class LegionAdd : GameNPC
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LegionAdd()
             : base()
@@ -742,14 +531,8 @@ namespace DOL.GS
             get { return 1200; }
         }
 
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
-        public override void DropLoot(GameObject killer)
-        {
-        }
+        public override int MeleeAttackRange => 450;
+        public override bool CanDropLoot => false;
         public override long ExperienceValue => 0;
         public override double GetArmorAF(eArmorSlot slot)
         {
@@ -795,8 +578,7 @@ namespace DOL.AI.Brain
 {
     public class LegionAddBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public LegionAddBrain()
             : base()
@@ -822,8 +604,7 @@ namespace DOL.GS
 {
     public class Behemoth : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Behemoth()
             : base()
@@ -846,20 +627,13 @@ namespace DOL.GS
 
             return base.HasAbility(keyName);
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int MaxHealth
         {
             get { return 600000; }
         }
 
-        public override int AttackRange
-        {
-            get { return 450; }
-            set { }
-        }
+        public override int MeleeAttackRange => 450;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 550;
@@ -881,14 +655,6 @@ namespace DOL.GS
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60158340);
             LoadTemplate(npcTemplate);
 
-            Strength = npcTemplate.Strength;
-            Constitution = npcTemplate.Constitution;
-            Dexterity = npcTemplate.Dexterity;
-            Quickness = npcTemplate.Quickness;
-            Empathy = npcTemplate.Empathy;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-
             BehemothBrain sBrain = new BehemothBrain();
             RespawnInterval = Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
             SetOwnBrain(sBrain);
@@ -904,8 +670,7 @@ namespace DOL.AI.Brain
 {
     public class BehemothBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public BehemothBrain()
             : base()

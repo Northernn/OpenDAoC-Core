@@ -6,8 +6,7 @@ namespace DOL.GS
 {
     public class GiantSporiteCluster : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public GiantSporiteCluster()
             : base()
@@ -23,19 +22,12 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int MaxHealth
         {
             get { return 100000; }
         }
-        public override int AttackRange
-        {
-            get { return 250; }
-            set { }
-        }
+        public override int MeleeAttackRange => 250;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -67,7 +59,7 @@ namespace DOL.GS
                 }
             }
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC copy in GetNPCsInRadius(10000))
             {
@@ -79,7 +71,7 @@ namespace DOL.GS
                     }
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public void Spawn()
         {
@@ -105,19 +97,11 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60161336);
             LoadTemplate(npcTemplate);
-            Strength = npcTemplate.Strength;
-            Dexterity = npcTemplate.Dexterity;
-            Constitution = npcTemplate.Constitution;
-            Quickness = npcTemplate.Quickness;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            Charisma = npcTemplate.Charisma;
-            Empathy = npcTemplate.Empathy;
+
             Spawn();
 
             RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
             GiantSporiteClusterBrain sBrain = new GiantSporiteClusterBrain();
             SetOwnBrain(sBrain);
             base.AddToWorld();
@@ -125,83 +109,83 @@ namespace DOL.GS
         }
     }
 }
-
-public class GiantSporiteClusterBrain : StandardMobBrain
+namespace DOL.AI.Brain
 {
-    private static readonly log4net.ILog log =
-        log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-    public GiantSporiteClusterBrain()
-        : base()
+    public class GiantSporiteClusterBrain : StandardMobBrain
     {
-        AggroLevel = 100;
-        AggroRange = 600;
-    }
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-    public override void Think()
-    {
-        if (!CheckProximityAggro())
+        public GiantSporiteClusterBrain()
+            : base()
         {
-            //set state to RETURN TO SPAWN
-            FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
-            Body.Health = Body.MaxHealth;
+            AggroLevel = 100;
+            AggroRange = 600;
         }
-        if (HasAggro && Body.TargetObject != null)
+
+        public override void Think()
         {
-            if (Util.Chance(5) && Body.TargetObject != null)
+            if (!CheckProximityAggro())
             {
-                new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastAOEDD), 3000);
+                //set state to RETURN TO SPAWN
+                FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
+                Body.Health = Body.MaxHealth;
             }
-            foreach (GameNPC copy in Body.GetNPCsInRadius(5000))
+            if (HasAggro && Body.TargetObject != null)
             {
-                if (copy != null)
+                if (Util.Chance(5) && Body.TargetObject != null)
                 {
-                    if (copy.IsAlive && copy.Brain is GSCAddsBrain brain)
+                    new ECSGameTimer(Body, new ECSGameTimer.ECSTimerCallback(CastAOEDD), 3000);
+                }
+                foreach (GameNPC copy in Body.GetNPCsInRadius(5000))
+                {
+                    if (copy != null)
                     {
-                        GameLiving target = Body.TargetObject as GameLiving;
-                        if (!brain.HasAggro)
-                            brain.AddToAggroList(target, 10);
+                        if (copy.IsAlive && copy.Brain is GSCAddsBrain brain)
+                        {
+                            GameLiving target = Body.TargetObject as GameLiving;
+                            if (!brain.HasAggro)
+                                brain.AddToAggroList(target, 10);
+                        }
                     }
                 }
             }
+            base.Think();
         }
-        base.Think();
-    }
-    public int CastAOEDD(ECSGameTimer timer)
-    {
-        Body.CastSpell(GSCAoe, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells));
-        return 0;
-    }
-
-    private Spell m_GSCAoe;
-    private Spell GSCAoe
-    {
-        get
+        public int CastAOEDD(ECSGameTimer timer)
         {
-            if (m_GSCAoe == null)
-            {
-                DbSpell spell = new DbSpell();
-                spell.AllowAdd = false;
-                spell.CastTime = 0;
-                spell.RecastDelay = 25;
-                spell.ClientEffect = 4568;
-                spell.Icon = 4568;
-                spell.Damage = 200;
-                spell.Name = "Xaga Staff Bomb";
-                spell.TooltipId = 4568;
-                spell.Radius = 200;
-                spell.Range = 600;
-                spell.SpellID = 11709;
-                spell.Target = "Enemy";
-                spell.Type = "DirectDamage";
-                spell.Uninterruptible = true;
-                spell.MoveCast = true;
-                spell.DamageType = (int) eDamageType.Cold;
-                m_GSCAoe = new Spell(spell, 70);
-                SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_GSCAoe);
-            }
+            Body.CastSpell(GSCAoe, SkillBase.GetSpellLine(GlobalSpellsLines.Mob_Spells));
+            return 0;
+        }
 
-            return m_GSCAoe;
+        private Spell m_GSCAoe;
+        private Spell GSCAoe
+        {
+            get
+            {
+                if (m_GSCAoe == null)
+                {
+                    DbSpell spell = new DbSpell();
+                    spell.AllowAdd = false;
+                    spell.CastTime = 0;
+                    spell.RecastDelay = 25;
+                    spell.ClientEffect = 4568;
+                    spell.Icon = 4568;
+                    spell.Damage = 200;
+                    spell.Name = "Xaga Staff Bomb";
+                    spell.TooltipId = 4568;
+                    spell.Radius = 200;
+                    spell.Range = 600;
+                    spell.SpellID = 11709;
+                    spell.Target = eSpellTarget.ENEMY.ToString();
+                    spell.Type = "DirectDamage";
+                    spell.Uninterruptible = true;
+                    spell.MoveCast = true;
+                    spell.DamageType = (int) eDamageType.Cold;
+                    m_GSCAoe = new Spell(spell, 70);
+                }
+
+                return m_GSCAoe;
+            }
         }
     }
 }
@@ -222,15 +206,8 @@ namespace DOL.GS
                 default: return 70;// dmg reduction for rest resists
             }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
-        public override int AttackRange
-        {
-            get { return 250; }
-            set { }
-        }
+
+        public override int MeleeAttackRange => 250;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -266,7 +243,7 @@ namespace DOL.GS
                 }
             }
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach(GameNPC copy in GetNPCsInRadius(10000))
             {
@@ -288,7 +265,7 @@ namespace DOL.GS
                     }
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
         public override short Strength { get => base.Strength; set => base.Strength = 50; }
         public override short Quickness { get => base.Quickness; set => base.Quickness = 100; }
@@ -297,12 +274,10 @@ namespace DOL.GS
             Model = 906;
             Name = "Giant Sporite Cluster";
             RespawnInterval = -1;
-            MaxDistance = 0;
             TetherRange = 0;
             Size = (byte)Util.Random(45, 55);
             Level = 79;
             Faction = FactionMgr.GetFactionByID(96);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(96));
             BodyType = 8;
             Realm = eRealm.None;
             GSCAddsBrain adds = new GSCAddsBrain();
@@ -317,8 +292,7 @@ namespace DOL.AI.Brain
 {
     public class GSCAddsBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public GSCAddsBrain()
             : base()

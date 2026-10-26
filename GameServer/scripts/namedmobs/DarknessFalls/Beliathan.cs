@@ -47,7 +47,6 @@ namespace DOL.GS
                 CO.Flags ^= eFlags.DONTSHOWNAME;
                 CO.Flags ^= eFlags.PEACE;
                 CO.Faction = FactionMgr.GetFactionByID(191);
-                CO.Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
                 CO.X = 22699;
                 CO.Y = 18684;
                 CO.Z = 15174;
@@ -70,8 +69,7 @@ namespace DOL.AI.Brain
 {
     public class BeliathanInitBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public BeliathanInitBrain()
             : base()
@@ -127,7 +125,7 @@ namespace DOL.AI.Brain
 
         public void BroadcastMessage(string message)
         {
-            foreach (GamePlayer player in ClientService.GetPlayersOfRegion(Body.CurrentRegion))
+            foreach (GamePlayer player in ClientService.Instance.GetPlayersOfRegion(Body.CurrentRegion))
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
         }
     }
@@ -153,10 +151,7 @@ namespace DOL.GS
         public static void ScriptUnloaded(DOLEvent e, object sender, EventArgs args)
         {
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100 * ServerProperties.Properties.EPICS_DMG_MULTIPLIER;
-        }
+
         public override int AttackSpeed(DbInventoryItem mainWeapon, DbInventoryItem leftWeapon = null)
         {
             return base.AttackSpeed(mainWeapon, leftWeapon) * 2;
@@ -185,16 +180,11 @@ namespace DOL.GS
             get { return 100000; }
         }
         public override short MaxSpeedBase => (short) (191 + Level * 2);
-        public override int AttackRange
-        {
-            get => 180;
-            set { }
-        }
+        public override int MeleeAttackRange => 180;
         public override bool AddToWorld()
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60158351);
             LoadTemplate(npcTemplate);
-            MaxDistance = 1500;
             TetherRange = 2000;
             RoamingRange = 400;
             Strength = npcTemplate.Strength;
@@ -214,16 +204,13 @@ namespace DOL.GS
             BodyType = 2;
 
             Faction = FactionMgr.GetFactionByID(191);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
 
             base.AddToWorld();
             return true;
         }
 
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
-            base.Die(killer);
-
             foreach (GameNPC npc in GetNPCsInRadius(4000))
             {
                 if (npc.Brain is BeliathanMinionBrain)
@@ -231,6 +218,8 @@ namespace DOL.GS
                     npc.RemoveFromWorld();
                 }
             }
+
+            base.ProcessDeath(killer);
         }
         private static void PlayerKilledByBeliathan(DOLEvent e, object sender, EventArgs args)
         {
@@ -265,8 +254,7 @@ namespace DOL.AI.Brain
 {
     public class BeliathanBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private bool RemoveAdds = false;
         public override void Think()
@@ -313,9 +301,7 @@ namespace DOL.GS
             Name += "'s Minion";
             RoamingRange = 350;
             RespawnInterval = -1;
-            MaxDistance = 1500;
             TetherRange = 2000;
-            IsWorthReward = false; // worth no reward
             Realm = eRealm.None;
             BeliathanMinionBrain adds = new BeliathanMinionBrain();
             LoadedFromScript = true;
@@ -325,14 +311,11 @@ namespace DOL.GS
             BodyType = 2;
 
             Faction = FactionMgr.GetFactionByID(191);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(191));
 
             base.AddToWorld();
             return true;
         }
-        public override void DropLoot(GameObject killer) //no loot
-        {
-        }
+        public override bool CanDropLoot => false;
         public override long ExperienceValue => 0;
         public override void Die(GameObject killer)
         {
@@ -345,8 +328,7 @@ namespace DOL.AI.Brain
 {
     public class BeliathanMinionBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public BeliathanMinionBrain()
         {

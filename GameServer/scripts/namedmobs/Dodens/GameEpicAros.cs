@@ -2,7 +2,6 @@ using System;
 using System.Reflection;
 using DOL.AI;
 using DOL.AI.Brain;
-using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
 
@@ -10,8 +9,7 @@ namespace DOL.GS.Scripts
 {
     public abstract class GameEpicAros : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Set Aros the Spiritmaster difficulty in percent of its max abilities
@@ -58,7 +56,6 @@ namespace DOL.GS.Scripts
                 "{0} trips and falls on the hard stone floor.",
                 "'You will remember my name! {0}!'"
             };
-            MaxDistance = 2500;
             TetherRange = 3500;
             SetOwnBrain(new ArosBrain());
         }
@@ -75,34 +72,19 @@ namespace DOL.GS.Scripts
         {
             get { return 40000; }
         }
-        public override int AttackRange
-        {
-            get { return 350; }
-            set { }
-        }
-        public override bool HasAbility(string keyName)
-        {
-            if (IsReturningToSpawnPoint && keyName == GS.Abilities.CCImmunity)
-                return true;
+        public override int MeleeAttackRange => 350;
 
-            return base.HasAbility(keyName);
-        }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
         /// <summary>
         /// Invoked when Aros the Spiritmaster dies.
         /// </summary>
         /// <param name="killer">The living that got the killing blow.</param>
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             if (killer == null)
                 log.Error("Aros The Spiritmaster Killed: killer is null!");
             else
                 log.Debug("Aros The Spiritmaster Killed: killer is " + killer.Name + ", attackers:");
             base.StopCurrentSpellcast();
-            base.Die(killer);
 
             foreach (String message in m_DeathAnnounce)
             {
@@ -120,6 +102,8 @@ namespace DOL.GS.Scripts
                     npc.Die(killer);
                 }
             }
+
+            base.ProcessDeath(killer);
         }
 
         #region Damage & Heal Events
@@ -139,21 +123,6 @@ namespace DOL.GS.Scripts
                 new TakeDamageEventArgs(source, damageType, damageAmount, criticalAmount));
         }
 
-        /// <summary>
-        /// Take action upon someone healing the enemy.
-        /// </summary>
-        /// <param name="enemy">The living that was healed.</param>
-        /// <param name="healSource">The source of the heal.</param>
-        /// <param name="changeType">The way the living was healed.</param>
-        /// <param name="healAmount">The amount that was healed.</param>
-        public override void EnemyHealed(GameLiving enemy, GameObject healSource, eHealthChangeType changeType,
-            int healAmount)
-        {
-            base.EnemyHealed(enemy, healSource, changeType, healAmount);
-            Brain.Notify(GameLivingEvent.EnemyHealed, this,
-                new EnemyHealedEventArgs(enemy, healSource, changeType, healAmount));
-        }
-
         #endregion
 
         /// <summary>
@@ -163,13 +132,6 @@ namespace DOL.GS.Scripts
         public override void ReturnToSpawnPoint(short speed)
         {
             base.ReturnToSpawnPoint(MaxSpeed);
-        }
-        public override void OnAttackedByEnemy(AttackData ad)
-        {
-            if (IsReturningToSpawnPoint)
-                return;
-
-            base.OnAttackedByEnemy(ad);
         }
 
         #region Health
@@ -195,7 +157,7 @@ namespace DOL.GS.Scripts
         /// <param name="message">The message to be broadcast.</param>
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -209,7 +171,7 @@ namespace DOL.GS.Scripts
                 GameLiving source = sender as GameLiving;
                 if (e == GameObjectEvent.TakeDamage)
                 {
-                    foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+                    foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
                     {
                         CheckDebuff(player);
                         CheckChanceBomb(player);
@@ -243,17 +205,13 @@ namespace DOL.GS.Scripts
             summonedGuardian.GuildName = "Summoned Ghost";
             summonedGuardian.Model = 140;
             summonedGuardian.Size = 65;
-            summonedGuardian.AttackRange = 200;
             summonedGuardian.Flags |= eFlags.GHOST;
             summonedGuardian.MeleeDamageType = eDamageType.Spirit;
             summonedGuardian.RespawnInterval = -1; // dont respawn
             summonedGuardian.RoamingRange = this.RoamingRange;
-            summonedGuardian.MaxDistance = 2000;
             summonedGuardian.MaxSpeedBase = this.MaxSpeedBase;
 
             // also copies the stats
-            summonedGuardian.CurrentSpeed = 200;
-
             summonedGuardian.Strength = this.Strength;
             summonedGuardian.Constitution = this.Constitution;
             summonedGuardian.Dexterity = this.Dexterity;

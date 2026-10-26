@@ -26,15 +26,8 @@ namespace DOL.GS
 				default: return 30;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -124,7 +117,6 @@ namespace DOL.GS
 					spell.DamageType = (int)eDamageType.Body;
 					spell.Uninterruptible = true;
 					m_ShredclawPoison = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ShredclawPoison);
 				}
 				return m_ShredclawPoison;
 			}
@@ -158,7 +150,6 @@ namespace DOL.GS
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Body;
 					m_ShredclawBleed = new Spell(spell, 60);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_ShredclawBleed);
 				}
 				return m_ShredclawBleed;
 			}
@@ -170,7 +161,7 @@ namespace DOL.AI.Brain
 {
 	public class ShredclawBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public ShredclawBrain() : base()
 		{
 			AggroLevel = 100;

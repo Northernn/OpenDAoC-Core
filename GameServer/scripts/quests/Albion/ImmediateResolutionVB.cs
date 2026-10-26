@@ -4,13 +4,12 @@ using DOL.AI.Brain;
 using DOL.Database;
 using DOL.Events;
 using DOL.GS.PacketHandler;
-using log4net;
 
 namespace DOL.GS.Quests.Albion
 {
     public class ImmediateResolutionVB : BaseQuest
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
         protected const string questTitle = "Immediate Resolution";
         protected const string stewardWillieNpcName = "Steward Willie";
         protected const string masterTorNpc = "Master Torr";
@@ -90,12 +89,12 @@ namespace DOL.GS.Quests.Albion
                                 mob.AddToWorld();
                                 if (i <= 5)
                                 {                                    
-                                    mob.WalkTo(_gaurdsman2, 180);
+                                    mob.PathTo(_gaurdsman2, 180);
                                     (mob.Brain as StandardMobBrain).AddToAggroList(_gaurdsman2, 1000);
                                 }
                                 else
                                 {
-                                    mob.WalkTo(_gaurdsman1, 180);
+                                    mob.PathTo(_gaurdsman1, 180);
                                     (mob.Brain as StandardMobBrain).AddToAggroList(_gaurdsman1, 1000);
                                 }
                             }
@@ -118,12 +117,12 @@ namespace DOL.GS.Quests.Albion
                                 mob.AddToWorld();
                                 if (i <= 5)
                                 {
-                                    mob.WalkTo(_gaurdsman4, 180);
+                                    mob.PathTo(_gaurdsman4, 180);
                                     (mob.Brain as StandardMobBrain).AddToAggroList(_gaurdsman4, 1000);
                                 }
                                 else
                                 {
-                                    mob.WalkTo(_gaurdsman3, 180);
+                                    mob.PathTo(_gaurdsman3, 180);
                                     (mob.Brain as StandardMobBrain).AddToAggroList(_gaurdsman3, 1000);
                                 }
                             }

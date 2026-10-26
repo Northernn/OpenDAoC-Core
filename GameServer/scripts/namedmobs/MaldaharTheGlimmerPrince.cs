@@ -9,8 +9,7 @@ namespace DOL.GS
 {
     public class MaldaharTheGlimmerPrince : GameEpicBoss
     {
-        private static new readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public MaldaharTheGlimmerPrince()
             : base()
@@ -43,15 +42,8 @@ namespace DOL.GS
         {
             get { return ServerProperties.Properties.SET_DIFFICULTY_ON_EPIC_ENCOUNTERS; }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
-        public override int AttackRange
-        {
-            get => 450;
-            set { }
-        }
+
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == DOL.GS.Abilities.CCImmunity)
@@ -64,18 +56,9 @@ namespace DOL.GS
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(44043);
             LoadTemplate(npcTemplate);
 
-            Strength = npcTemplate.Strength;
-            Constitution = npcTemplate.Constitution;
-            Dexterity = npcTemplate.Dexterity;
-            Quickness = npcTemplate.Quickness;
-            Empathy = npcTemplate.Empathy;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-
             // magical
             BodyType = 8;
             Faction = FactionMgr.GetFactionByID(83);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(83));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000; //1min is 60000 miliseconds
 
             MaldaharBrain sBrain = new MaldaharBrain();
@@ -90,8 +73,7 @@ namespace DOL.AI.Brain
 {
     public class MaldaharBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log =
-            log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public MaldaharBrain()
             : base()
@@ -102,7 +84,7 @@ namespace DOL.AI.Brain
 
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -110,7 +92,7 @@ namespace DOL.AI.Brain
 
         public override void AttackMostWanted()
         {
-            if (Body.IsWithinRadius(Body.TargetObject, Body.AttackRange + 250))
+            if (Body.IsWithinRadius(Body.TargetObject, Body.attackComponent.AttackRange + 250))
             {
                 switch (Util.Random(1, 2))
                 {
@@ -154,7 +136,7 @@ namespace DOL.AI.Brain
             if (e != GameObjectEvent.TakeDamage && e != GameLivingEvent.EnemyHealed) return;
             GameObject source = (args as TakeDamageEventArgs)?.DamageSource;
             if (source == null) return;
-            if (Body.IsWithinRadius(source, Body.AttackRange + 250)) return;
+            if (Body.IsWithinRadius(source, Body.attackComponent.AttackRange + 250)) return;
             switch (Util.Random(1, 2))
             {
                 case 1:
@@ -199,11 +181,10 @@ namespace DOL.AI.Brain
                     spell.Range = 2500;
                     spell.Radius = 250;
                     spell.SpellID = 710;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "Lifedrain";
                     spell.DamageType = (int) eDamageType.Body;
                     m_Lifetap = new Spell(spell, 60);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Lifetap);
                 }
 
                 return m_Lifetap;
@@ -235,11 +216,10 @@ namespace DOL.AI.Brain
                     spell.Range = 2500;
                     spell.Radius = 550;
                     spell.SpellID = 4204;
-                    spell.Target = "Enemy";
+                    spell.Target = eSpellTarget.ENEMY.ToString();
                     spell.Type = "DirectDamage";
                     spell.DamageType = (int) eDamageType.Energy;
                     m_PBAoe = new Spell(spell, 60);
-                    SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_PBAoe);
                 }
 
                 return m_PBAoe;

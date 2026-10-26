@@ -10,7 +10,7 @@ namespace DOL.GS
 {
     public class Yar : GameEpicBoss
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Yar()
             : base()
@@ -43,21 +43,9 @@ namespace DOL.GS
         {
             get { return 40000; }
         }
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
 
-        public override int AttackRange
-        {
-            get
-            {
-                return 450;
-            }
-            set
-            {
-            }
-        }
+
+        public override int MeleeAttackRange => 450;
         public override bool HasAbility(string keyName)
         {
             if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -69,17 +57,8 @@ namespace DOL.GS
         {
             INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(60168093);
             LoadTemplate(npcTemplate);
-            
-            Strength = npcTemplate.Strength;
-            Constitution = npcTemplate.Constitution;
-            Dexterity = npcTemplate.Dexterity;
-            Quickness = npcTemplate.Quickness;
-            Empathy = npcTemplate.Empathy;
-            Piety = npcTemplate.Piety;
-            Intelligence = npcTemplate.Intelligence;
-            
+
             Faction = FactionMgr.GetFactionByID(154);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(154));
             RespawnInterval = ServerProperties.Properties.SET_EPIC_GAME_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 
             YarBrain sBrain = new YarBrain();
@@ -87,7 +66,7 @@ namespace DOL.GS
             base.AddToWorld();
             return true;
         }
-        public override void Die(GameObject killer)
+        public override void ProcessDeath(GameObject killer)
         {
             foreach (GameNPC npc in GetNPCsInRadius(5000))
             {
@@ -96,7 +75,7 @@ namespace DOL.GS
                     npc.RemoveFromWorld();
                 }
             }
-            base.Die(killer);
+            base.ProcessDeath(killer);
         }
     }
 }
@@ -105,7 +84,7 @@ namespace DOL.AI.Brain
 {
     public class YarBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public YarBrain()
             : base()
         {
@@ -117,7 +96,7 @@ namespace DOL.AI.Brain
         
         public void BroadcastMessage(String message)
         {
-            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+            foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
             {
                 player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
             }
@@ -220,17 +199,14 @@ namespace DOL.GS
 {
     public class YarAdd : GameNPC
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public YarAdd()
             : base()
         {
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
+
 
         public override int MaxHealth
         {
@@ -240,16 +216,7 @@ namespace DOL.GS
             }
         }
 
-        public override int AttackRange
-        {
-            get
-            {
-                return 450;
-            }
-            set
-            {
-            }
-        }
+        public override int MeleeAttackRange => 450;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 300;
@@ -282,8 +249,7 @@ namespace DOL.GS
             MeleeDamageType = eDamageType.Slash;
 
             Faction = FactionMgr.GetFactionByID(154);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(154));
-            
+
             BodyType = 5;
             YarAddBrain sBrain = new YarAddBrain();
             SetOwnBrain(sBrain);
@@ -295,17 +261,14 @@ namespace DOL.GS
     }
     public class YarAdd2 : GameNPC
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public YarAdd2()
             : base()
         {
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
+
 
         public override int MaxHealth
         {
@@ -315,16 +278,7 @@ namespace DOL.GS
             }
         }
 
-        public override int AttackRange
-        {
-            get
-            {
-                return 450;
-            }
-            set
-            {
-            }
-        }
+        public override int MeleeAttackRange => 450;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 300;
@@ -357,7 +311,6 @@ namespace DOL.GS
             MeleeDamageType = eDamageType.Slash;
             
             Faction = FactionMgr.GetFactionByID(154);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(154));
             
             BodyType = 5;
             YarAddBrain sBrain = new YarAddBrain();
@@ -370,17 +323,14 @@ namespace DOL.GS
     }
     public class YarAdd3 : GameNPC
     {
-        private static new readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static new readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public YarAdd3()
             : base()
         {
         }
 
-        public override double AttackDamage(DbInventoryItem weapon)
-        {
-            return base.AttackDamage(weapon) * Strength / 100;
-        }
+
 
         public override int MaxHealth
         {
@@ -390,16 +340,7 @@ namespace DOL.GS
             }
         }
 
-        public override int AttackRange
-        {
-            get
-            {
-                return 450;
-            }
-            set
-            {
-            }
-        }
+        public override int MeleeAttackRange => 450;
         public override double GetArmorAF(eArmorSlot slot)
         {
             return 300;
@@ -428,8 +369,7 @@ namespace DOL.GS
             Quickness = 125;
             RespawnInterval = -1;
             Faction = FactionMgr.GetFactionByID(154);
-            Faction.AddFriendFaction(FactionMgr.GetFactionByID(154));
-            
+
             Gender = eGender.Neutral;
             MeleeDamageType = eDamageType.Slash;
 
@@ -448,7 +388,7 @@ namespace DOL.AI.Brain
 {
     public class YarAddBrain : StandardMobBrain
     {
-        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public YarAddBrain()
             : base()
         {

@@ -1,10 +1,4 @@
-using System;
-using System.Reflection;
-using System.Collections;
 using System.Collections.Generic;
-using DOL.GS;
-using DOL.GS.PacketHandler;
-using DOL.GS.Effects;
 using DOL.Database;
 using DOL.GS.Spells;
 
@@ -43,7 +37,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.ClientEffect = 3075;
             m_dbspell.Damage = 0;
             m_dbspell.DamageType = 0;
-            m_dbspell.Target = "Pet";
+            m_dbspell.Target = eSpellTarget.PET.ToString();
             m_dbspell.Radius = 0;
             m_dbspell.Type = eSpellType.ConstitutionBuff.ToString();
             m_dbspell.Value = 100;
@@ -55,7 +49,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.EffectGroup = 0;
             m_dbspell.Range = 500;
             m_spell = new Spell(m_dbspell, 0); // make spell level 0 so it bypasses the spec level adjustment code
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
 
         public override void Execute(GameLiving living)

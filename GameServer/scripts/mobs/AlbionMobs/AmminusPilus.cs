@@ -1,5 +1,4 @@
-﻿using System;
-using DOL.AI.Brain;
+﻿using DOL.AI.Brain;
 using DOL.GS;
 using DOL.GS.PacketHandler;
 
@@ -13,13 +12,6 @@ namespace DOL.GS
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(12888);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			SpawnPilusFury();
 
 			AmminusPilusBrain sbrain = new AmminusPilusBrain();
@@ -47,7 +39,7 @@ namespace DOL.GS
 			return 0;
 		}
 
-		public override void Die(GameObject killer)
+		public override void ProcessDeath(GameObject killer)
         {
 			foreach(GameNPC npc in GetNPCsInRadius(5000))
             {
@@ -59,7 +51,7 @@ namespace DOL.GS
 				if (npc.IsAlive && npc != null && npc.Brain is PilusAddBrain)
 					npc.RemoveFromWorld();
 			}
-			base.Die(killer);
+			base.ProcessDeath(killer);
         }
 		private void SpawnPilusFury()
         {
@@ -82,7 +74,7 @@ namespace DOL.AI.Brain
 {
     public class AmminusPilusBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public AmminusPilusBrain() : base()
 		{
 			AggroLevel = 100;
@@ -91,13 +83,6 @@ namespace DOL.AI.Brain
 		}
 		private bool SpawnAdds = false;
 		private bool RemoveAdds = false;
-		public void BroadcastMessage(String message)
-		{
-			foreach (GamePlayer player in Body.GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
-			{
-				player.Out.SendMessage(message, eChatType.CT_Say, eChatLoc.CL_ChatWindow);
-			}
-		}
 		public override void Think()
 		{
 			if(!CheckProximityAggro())
@@ -118,7 +103,7 @@ namespace DOL.AI.Brain
 				RemoveAdds = false;
 				if (!SpawnAdds)
 				{
-					BroadcastMessage("The Amminus pilus says, \"I require assistance!\"");
+					Message.MessageToArea(Body, "The Amminus pilus says, \"I require assistance!\"", eChatType.CT_Say, eChatLoc.CL_ChatWindow, WorldMgr.VISIBILITY_DISTANCE);
 					SpawnPilusAdds();
 					SpawnAdds = true;
 				}
@@ -183,7 +168,7 @@ namespace DOL.AI.Brain
 {
     public class PilusAddBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public PilusAddBrain() : base()
 		{
 			AggroLevel = 100;

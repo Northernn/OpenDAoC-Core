@@ -66,15 +66,8 @@ namespace DOL.GS
 				}
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 100;
-		}
-		public override int AttackRange
-		{
-			get { return 350; }
-			set { }
-		}
+
+		public override int MeleeAttackRange => 350;
 		public override bool HasAbility(string keyName)
 		{
 			if (IsAlive && keyName == GS.Abilities.CCImmunity)
@@ -82,23 +75,25 @@ namespace DOL.GS
 
 			return base.HasAbility(keyName);
 		}
+		public override void ProcessDeath(GameObject killer)
+		{
+			foreach (GameNPC npc in WorldMgr.GetNPCsFromRegion(this.CurrentRegionID))
+			{
+				if (npc != null)
+				{
+					if (npc.IsAlive && (npc.Brain is TorturedSoulsBrain || npc.Brain is ExplodeUndeadBrain))
+						npc.RemoveFromWorld();
+				}
+			}
+			base.ProcessDeath(killer);
+		}
 		public override bool AddToWorld()
 		{
 			INpcTemplate npcTemplate = NpcTemplateMgr.GetTemplate(18806);
 			LoadTemplate(npcTemplate);
-			Strength = npcTemplate.Strength;
-			Dexterity = npcTemplate.Dexterity;
-			Constitution = npcTemplate.Constitution;
-			Quickness = npcTemplate.Quickness;
-			Piety = npcTemplate.Piety;
-			Intelligence = npcTemplate.Intelligence;
-			Empathy = npcTemplate.Empathy;
 			RespawnInterval = ServerProperties.Properties.SET_SI_EPIC_ENCOUNTER_RESPAWNINTERVAL * 60000;//1min is 60000 miliseconds
 			Faction = FactionMgr.GetFactionByID(206);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 			IsCloakHoodUp = true;
-			SummonerLossrenBrain.IsCreatingSouls = false;
-			TorturedSouls.TorturedSoulKilled = 0;
 
 			SummonerLossrenBrain sbrain = new SummonerLossrenBrain();
 			SetOwnBrain(sbrain);
@@ -136,12 +131,10 @@ namespace DOL.GS
 				OF.BodyType = (ushort)NpcTemplateMgr.eBodyType.Humanoid;
 				OF.MeleeDamageType = eDamageType.Crush;
 				OF.Faction = FactionMgr.GetFactionByID(206);
-				OF.Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 
 				OF.X = 39273;
 				OF.Y = 41166;
 				OF.Z = 15998;
-				OF.MaxDistance = 2000;
 				OF.TetherRange = 1300;
 				OF.MaxSpeedBase = 250;
 				OF.Heading = 967;
@@ -160,19 +153,36 @@ namespace DOL.GS
 		}
 	}
 }
+
 namespace DOL.AI.Brain
 {
 	public class SummonerLossrenBrain : StandardMobBrain
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		public SummonerLossrenBrain() : base()
 		{
 			AggroLevel = 100;
 			AggroRange = 600;
 			ThinkInterval = 1500;
 		}
-		public static bool IsCreatingSouls = false;
+		public bool IsCreatingSouls = false;
+		public int TorturedSoulKilled = 0;
 		private bool RemoveAdds = false;
+		private readonly List<GameNPC> _souls = new List<GameNPC>();
+		private GameNPC _explodeZombie;
+		private bool IsTorturedSoulUp()
+		{
+			foreach (GameNPC npc in _souls)
+			{
+				if (npc != null && npc.IsAlive && npc.ObjectState is GameObject.eObjectState.Active)
+					return true;
+			}
+			return false;
+		}
+		private bool IsExplodeZombieUp()
+		{
+			return _explodeZombie != null && _explodeZombie.IsAlive && _explodeZombie.ObjectState is GameObject.eObjectState.Active;
+		}
 		public override void Think()
 		{
 			if (!CheckProximityAggro())
@@ -180,8 +190,7 @@ namespace DOL.AI.Brain
 				//set state to RETURN TO SPAWN
 				FSM.SetCurrentState(eFSMStateType.RETURN_TO_SPAWN);
 				Body.Health = Body.MaxHealth;
-				TorturedSouls.TorturedSoulKilled = 0;
-				TorturedSouls.TorturedSoulCount = 0;
+				TorturedSoulKilled = 0;
 				if (!RemoveAdds)
 				{
 					foreach (GameNPC souls in Body.GetNPCsInRadius(5000))
@@ -194,6 +203,14 @@ namespace DOL.AI.Brain
 							}
 						}
 					}
+					foreach (GameNPC souls in _souls)
+					{
+						if (souls != null && souls.ObjectState is GameObject.eObjectState.Active)
+							souls.RemoveFromWorld();
+					}
+					_souls.Clear();
+					if (IsExplodeZombieUp())
+						_explodeZombie.RemoveFromWorld();
 					RemoveAdds = true;
 				}
 			}
@@ -226,7 +243,7 @@ namespace DOL.AI.Brain
         {
 			if (Body.InCombat && Body.IsAlive && HasAggro)
 			{
-				if(TorturedSouls.TorturedSoulCount == 0)
+				if(!IsTorturedSoulUp())
 					SpawnSouls();
 			}
 			SpawnBigZombie();
@@ -239,6 +256,7 @@ namespace DOL.AI.Brain
 			Point3D point2 = new Point3D(38505, 41211, 16001);
 			Point3D point3 = new Point3D(39180, 40583, 16000);
 			Point3D point4 = new Point3D(39745, 41176, 16001);
+			_souls.RemoveAll(npc => npc == null || !npc.IsAlive || npc.ObjectState is not GameObject.eObjectState.Active);
 
 			for (int i = 0; i < Util.Random(18, 25); i++)//create 18-25 souls every time timer will launch
 			{
@@ -277,9 +295,10 @@ namespace DOL.AI.Brain
 				}
 				add.CurrentRegion = Body.CurrentRegion;
 				add.Heading = Body.Heading;
+				add.OwnerBrain = this;
 				add.AddToWorld();
 				add.LoadedFromScript = true;
-				++TorturedSouls.TorturedSoulCount;
+				_souls.Add(add);
 			}
 		}
 		public void SpawnBigZombie()
@@ -288,7 +307,7 @@ namespace DOL.AI.Brain
 			Point3D point2 = new Point3D(38505, 41211, 16001);
 			Point3D point3 = new Point3D(39180, 40583, 16000);
 			Point3D point4 = new Point3D(39745, 41176, 16001);
-			if (TorturedSouls.TorturedSoulKilled == 20 && ExplodeUndead.ExplodeZombieCount==0)//spawn explode zombie
+			if (TorturedSoulKilled == 20 && !IsExplodeZombieUp())//spawn explode zombie
 			{
 				ExplodeUndead add2 = new ExplodeUndead();
 				switch (Util.Random(1, 4))
@@ -326,8 +345,8 @@ namespace DOL.AI.Brain
 				add2.Heading = Body.Heading;
 				add2.AddToWorld();
 				add2.LoadedFromScript = true;
-				TorturedSouls.TorturedSoulKilled = 0;
-				++ExplodeUndead.ExplodeZombieCount;
+				_explodeZombie = add2;
+				TorturedSoulKilled = 0;
 			}
 		}
 	}
@@ -353,6 +372,7 @@ namespace DOL.AI.Brain
 		}
 	}
 }
+
 namespace DOL.GS
 {
 	public class TorturedSouls : GameNPC
@@ -380,21 +400,15 @@ namespace DOL.GS
 				default: return 25;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
-		{
-			return base.AttackDamage(weapon) * Strength / 500;
-		}
-		public static int TorturedSoulCount = 0;
-		public static int TorturedSoulKilled = 0;
-		public override void Die(GameObject killer)
+
+		public SummonerLossrenBrain OwnerBrain;
+		public override void ProcessDeath(GameObject killer)
         {
-			--TorturedSoulCount;
-			++TorturedSoulKilled;
-            base.Die(killer);
+			if (OwnerBrain != null && OwnerBrain.Body != null && OwnerBrain.Body.IsAlive)
+				++OwnerBrain.TorturedSoulKilled;
+            base.ProcessDeath(killer);
         }
-        public override void DropLoot(GameObject killer)//dont drop loot
-        {
-        }
+		public override bool CanDropLoot => false;
         List<string> soul_names = new List<string>()
 		{
 			"Aphryx's Tortured Soul","Arus's Tortured Soul","Briandina's Tortured Soul","Dwuanne's Tortured Soul",
@@ -423,7 +437,6 @@ namespace DOL.GS
 			Size = (byte)Util.Random(45,55);
 			Level = (byte)Util.Random(48, 53);
 			Faction = FactionMgr.GetFactionByID(187);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 			TorturedSoulsBrain souls = new TorturedSoulsBrain();
 			SetOwnBrain(souls);			
 			base.AddToWorld();
@@ -442,20 +455,21 @@ namespace DOL.AI.Brain
 			AggroLevel = 100;
 			AggroRange = 800;
 		}
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-		public static bool IsKilled = false;
-		public static bool SetAggroAmount = false;
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		public bool IsKilled = false;
+		public bool SetAggroAmount = false;
 		public override void Think()
 		{
+			GamePlayer randomTarget = Body is ExplodeUndead undead ? undead.RandomTarget : null;
 			if (Body.IsAlive)
 			{
-				if (Body.TargetObject == null && ExplodeUndead.RandomTarget != null)
+				if (Body.TargetObject == null && randomTarget != null)
 				{
-					Body.TargetObject = ExplodeUndead.RandomTarget;
+					Body.TargetObject = randomTarget;
 				}
 				if (Body.TargetObject != null)
 				{
-					if (Body.IsWithinRadius(Body.TargetObject, Body.AttackRange))
+					if (Body.IsWithinRadius(Body.TargetObject, Body.attackComponent.AttackRange))
 					{
 						if (IsKilled == false)
 						{
@@ -466,11 +480,11 @@ namespace DOL.AI.Brain
 					}
 				}
 			}
-			if (Body.IsAlive && ExplodeUndead.RandomTarget != null )
+			if (Body.IsAlive && randomTarget != null )
             {
 				if (SetAggroAmount == false)
 				{
-					AddToAggroList(ExplodeUndead.RandomTarget, 2000);
+					AddToAggroList(randomTarget, 2000);
 					SetAggroAmount = true;
 				}
 			}
@@ -506,13 +520,13 @@ namespace DOL.AI.Brain
 					spell.MoveCast = true;
 					spell.DamageType = (int)eDamageType.Matter;
 					m_Zombie_aoe = new Spell(spell, 70);
-					SkillBase.AddScriptedSpell(GlobalSpellsLines.Mob_Spells, m_Zombie_aoe);
 				}
 				return m_Zombie_aoe;
 			}
 		}
 	}
 }
+
 namespace DOL.GS
 {
 	public class ExplodeUndead : GameNPC
@@ -523,7 +537,7 @@ namespace DOL.GS
 		}
 		public void BroadcastMessage(String message)
 		{
-			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.OBJ_UPDATE_DISTANCE))
+			foreach (GamePlayer player in GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE))
 			{
 				player.Out.SendMessage(message, eChatType.CT_Broadcast, eChatLoc.CL_SystemWindow);
 			}
@@ -537,11 +551,7 @@ namespace DOL.GS
 			// 85% ABS is cap.
 			return 0.25;
 		}
-		public override int AttackRange
-		{
-			get { return 200; }
-			set { }
-		}
+		public override int MeleeAttackRange => 200;
 		public override int GetResist(eDamageType damageType)
 		{
 			switch (damageType)
@@ -552,22 +562,15 @@ namespace DOL.GS
 				default: return 25;// dmg reduction for rest resists
 			}
 		}
-		public override double AttackDamage(DbInventoryItem weapon)
+
+		public override void ProcessDeath(GameObject killer)
 		{
-			return base.AttackDamage(weapon) * Strength / 150;
-		}
-		public static int ExplodeZombieCount = 0;
-		public override void Die(GameObject killer)
-		{
-			--ExplodeZombieCount;
 			RandomTarget = null;
-			base.Die(killer);
+			base.ProcessDeath(killer);
 		}
-        public override void DropLoot(GameObject killer)//dont drop loot
-        {
-        }
-        public static GamePlayer randomtarget = null;
-		public static GamePlayer RandomTarget
+        public override bool CanDropLoot => false;
+        public GamePlayer randomtarget = null;
+		public GamePlayer RandomTarget
 		{
 			get { return randomtarget; }
 			set { randomtarget = value; }
@@ -577,9 +580,6 @@ namespace DOL.GS
 		{
 			Model = 923;
 			RandomTarget = null;
-			ExplodeUndeadBrain.IsKilled = false;
-			ExplodeUndeadBrain.SetAggroAmount = false;
-			ExplodeZombieCount = 0;
 			Zombie_Targets.Clear();
 			Name = "infected ghoul";
 			RespawnInterval = -1;
@@ -587,7 +587,6 @@ namespace DOL.GS
 			Size = 70;
 			Level = (byte)Util.Random(62, 65);
 			Faction = FactionMgr.GetFactionByID(187);
-			Faction.AddFriendFaction(FactionMgr.GetFactionByID(187));
 			ExplodeUndeadBrain souls = new ExplodeUndeadBrain();
 			SetOwnBrain(souls);
 			bool success = base.AddToWorld();

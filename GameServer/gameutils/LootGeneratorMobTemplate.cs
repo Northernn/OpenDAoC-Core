@@ -33,7 +33,7 @@ namespace DOL.GS
 	/// </summary>
 	public class LootGeneratorMobTemplate : LootGeneratorBase
 	{
-		private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+		private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
 		/// <summary>
 		/// Map holding a list of ItemTemplateIDs for each TemplateName
@@ -241,7 +241,7 @@ namespace DOL.GS
 			{
 				GamePlayer player = killer as GamePlayer;
 				if (killer is GameNPC && ((GameNPC)killer).Brain is IControlledBrain)
-					player = ((ControlledNpcBrain)((GameNPC)killer).Brain).GetPlayerOwner();
+					player = ((ControlledMobBrain)((GameNPC)killer).Brain).GetPlayerOwner();
 				if (player == null)
 					return loot;
 

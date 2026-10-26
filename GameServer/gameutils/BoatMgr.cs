@@ -1,29 +1,10 @@
-/*
- * DAWN OF LIGHT - The first free open source DAoC server emulator
- * 
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- *
- */
-
 using System;
 using System.Collections;
 using System.Collections.Specialized;
 using System.Reflection;
+using System.Threading;
 using DOL.Database;
 using DOL.GS.PacketHandler;
-using log4net;
 
 namespace DOL.GS
 {
@@ -35,17 +16,19 @@ namespace DOL.GS
         /// <summary>
         /// Defines a logger for this class.
         /// </summary>
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// ArrayList of all player boats in the game
         /// </summary>
-        static private readonly HybridDictionary m_boats = new HybridDictionary();
+        private static readonly HybridDictionary m_boats = new HybridDictionary();
+        private static readonly Lock _boatsLock = new();
 
         /// <summary>
         /// ArrayList of all boatid's to BoatNames
         /// </summary>
-        static private readonly HybridDictionary m_boatids = new HybridDictionary();
+        private static readonly HybridDictionary m_boatIds = new HybridDictionary();
+        private static readonly Lock _boatsIdsLock = new();
 
         /// <summary>
         /// Adds a player boat to the list of boats
@@ -57,12 +40,12 @@ namespace DOL.GS
             if (boat == null)
                 return false;
 
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 if (!m_boats.Contains(boat.Name))
                 {
                     m_boats.Add(boat.Name, boat);
-                    m_boatids.Add(boat.BoatID, boat.Name);
+                    m_boatIds.Add(boat.BoatID, boat.Name);
                     return true;
                 }
             }
@@ -80,10 +63,10 @@ namespace DOL.GS
             if (boat == null)
                 return false;
 
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 m_boats.Remove(boat.Name);
-                m_boatids.Remove(boat.InternalID);
+                m_boatIds.Remove(boat.InternalID);
             }
             return true;
         }
@@ -95,7 +78,7 @@ namespace DOL.GS
         /// <returns>true or false</returns>
         public static bool DoesBoatExist(string boatName)
         {
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 if (m_boats.Contains(boatName))
                     return true;
@@ -185,7 +168,7 @@ namespace DOL.GS
         public static GameBoat GetBoatByName(string boatName)
         {
             if (boatName == null) return null;
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 return (GameBoat)m_boats[boatName];
             }
@@ -199,13 +182,13 @@ namespace DOL.GS
         {
             if (boatid == null) return null;
 
-            lock (m_boatids.SyncRoot)
+            lock (_boatsIdsLock)
             {
-                if (m_boatids[boatid] == null) return null;
+                if (m_boatIds[boatid] == null) return null;
 
-                lock (m_boats.SyncRoot)
+                lock (_boatsLock)
                 {
-                    return (GameBoat)m_boats[m_boatids[boatid]];
+                    return (GameBoat)m_boats[m_boatIds[boatid]];
                 }
             }
         }
@@ -218,7 +201,7 @@ namespace DOL.GS
         {
             GameBoat b = GetBoatByName(boatName);
             if (b == null)
-                return "";
+                return string.Empty;
             return b.BoatID;
         }
 
@@ -230,7 +213,7 @@ namespace DOL.GS
         {
             if (owner == null) return null;
 
-            lock (m_boatids.SyncRoot)
+            lock (_boatsIdsLock)
             {
                 foreach (GameBoat boat in m_boats.Values)
                 {
@@ -255,7 +238,7 @@ namespace DOL.GS
         /// </summary>
         public static bool LoadAllBoats()
         {
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 m_boats.Clear();
             }
@@ -275,31 +258,34 @@ namespace DOL.GS
         /// <summary>
         /// Save all boats into database
         /// </summary>
-        public static void SaveAllBoats()
+        public static int SaveAllBoats()
         {
-            if (log.IsDebugEnabled)
-                log.Debug("Saving all boats...");
+            int count = 0;
+
             try
             {
-                lock (m_boats.SyncRoot)
+                lock (_boatsLock)
                 {
                     foreach (GameBoat b in m_boats.Values)
                     {
                         b.SaveIntoDatabase();
+                        count++;
                     }
                 }
             }
             catch (Exception e)
             {
                 if (log.IsErrorEnabled)
-                    log.Error("Error saving boatss.", e);
+                    log.Error("Error saving boats", e);
             }
+
+            return count;
         }
 
         public static ArrayList GetAllBoats()
         {
             ArrayList boats = new ArrayList();
-            lock (m_boats.SyncRoot)
+            lock (_boatsLock)
             {
                 foreach (GameBoat boat in m_boats.Values)
                 {

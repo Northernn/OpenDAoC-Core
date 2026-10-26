@@ -1,15 +1,9 @@
-using System;
-using System.Collections;
-using System.Reflection;
-using DOL.GS;
-using DOL.GS.PacketHandler;
-using DOL.GS.Effects;
-using DOL.GS.Spells;
-using DOL.Events;
 using DOL.Database;
+using DOL.GS.Spells;
+
 namespace DOL.GS.RealmAbilities
 {
-	public class AtlasOF_Trip : TimedRealmAbility, ISpellCastingAbilityHandler
+    public class AtlasOF_Trip : TimedRealmAbility, ISpellCastingAbilityHandler
     {
 		public AtlasOF_Trip(DbAbility dba, int level) : base(dba, level) { }
 
@@ -40,7 +34,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.ClientEffect = 2758;
             m_dbspell.Damage = 0;
 			m_dbspell.DamageType = (int)m_damageType;
-            m_dbspell.Target = "Enemy";
+            m_dbspell.Target = eSpellTarget.ENEMY.ToString();
             m_dbspell.Radius = 0;
 			m_dbspell.Type = eSpellType.SpeedDecrease.ToString();
             m_dbspell.Value = 30;
@@ -57,7 +51,7 @@ namespace DOL.GS.RealmAbilities
             m_dbspell.Description = "Reduce the movement speed of all enemies in a " 
                                                + m_range + " unit radius by 35%.";
 			m_spell = new Spell(m_dbspell, caster.Level);
-            m_spellline = new SpellLine("RAs", "RealmAbilities", "RealmAbilities", true);
+            m_spellline = GlobalSpellsLines.RealmSpellsSpellLine;
         }
 
         public override void Execute(GameLiving living)
