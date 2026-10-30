@@ -8,8 +8,7 @@ using DOL.Logging;
 
 namespace DOL.GS
 {
-    // A very specialized thread pool, meant to be used by the game loop and its dedicated thread exclusively.
-    public sealed class GameLoopThreadPoolMultiThreaded : GameLoopThreadPool
+    public sealed class ParallelTickExecutor : TickExecutor
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -29,7 +28,7 @@ namespace DOL.GS
         // Thread management.
         private Thread[] _workers;                      // Worker threads (excludes caller).
         private long[] _workerCycle;                    // Worker cycle phase, used to detect stuck threads.
-        private GameLoopThreadPoolWatchdog _watchdog;   // Monitors worker health; restarts if needed.
+        private TickWorkerWatchdog _watchdog;           // Monitors worker health; restarts if needed.
         private CancellationTokenSource _shutdownToken;
 
         // Work coordination.
@@ -50,7 +49,7 @@ namespace DOL.GS
             [FieldOffset(128)] public int CompletedWorkerCount;  // Count of workers finished for current iteration.
         }
 
-        public GameLoopThreadPoolMultiThreaded(int degreeOfParallelism)
+        public ParallelTickExecutor(int degreeOfParallelism)
         {
             ArgumentOutOfRangeException.ThrowIfGreaterThan(degreeOfParallelism, MAX_DEGREE_OF_PARALLELISM);
             _degreeOfParallelism = degreeOfParallelism;
@@ -124,7 +123,7 @@ namespace DOL.GS
             catch (Exception e)
             {
                 if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
+                    log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
 
                 GameServer.Instance.Stop();
             }
@@ -147,7 +146,7 @@ namespace DOL.GS
             catch (Exception e)
             {
                 if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
+                    log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
 
                 GameServer.Instance.Stop();
             }
@@ -229,7 +228,7 @@ namespace DOL.GS
         {
             (int Id, _) = ((int, bool)) obj;
             _workers[Id] = Thread.CurrentThread;
-            _workerCycle[Id] = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
+            _workerCycle[Id] = TickWorkerWatchdog.IDLE_CYCLE;
             base.InitWorker(obj);
             _workerStartLatch.Signal();
             RunWorkerLoop(Id, _shutdownToken.Token);
@@ -257,7 +256,7 @@ namespace DOL.GS
         private void RunWorkerLoop(int id, CancellationToken cancellationToken)
         {
             ref long workerCycle = ref _workerCycle[id];
-            long cycle = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
+            long cycle = TickWorkerWatchdog.IDLE_CYCLE;
 
             while (Volatile.Read(ref _running))
             {
@@ -284,14 +283,14 @@ namespace DOL.GS
                 catch (Exception e)
                 {
                     if (log.IsFatalEnabled)
-                        log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
+                        log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
 
                     GameServer.Instance.Stop();
                     break;
                 }
                 finally
                 {
-                    workerCycle = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
+                    workerCycle = TickWorkerWatchdog.IDLE_CYCLE;
 
                     if (acquiredWork)
                         Interlocked.Increment(ref _workState.CompletedWorkerCount);

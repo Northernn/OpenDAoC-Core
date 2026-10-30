@@ -15,7 +15,7 @@ namespace DOL.GS
         public const string THREAD_NAME = "GameLoop";
 
         private static Thread _gameLoopThread;
-        private static GameLoopThreadPool _threadPool;
+        private static TickExecutor _tickExecutor;
         private static GameLoopTickPacer _tickPacer;
         private static bool _running;
         private static List<TickState> _tickSequence;
@@ -53,7 +53,7 @@ namespace DOL.GS
                 _gameLoopThread.Join();
 
             _tickPacer.Stop();
-            _threadPool.Dispose();
+            _tickExecutor.Dispose();
         }
 
         public static List<(int, double)> GetAverageTps()
@@ -63,32 +63,32 @@ namespace DOL.GS
 
         public static void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action)
         {
-            _threadPool.ExecuteForEach(items, toExclusive, action);
+            _tickExecutor.ExecuteForEach(items, toExclusive, action);
         }
 
         public static void ExecuteForEachSharded<T>(List<T>[] shards, int[] shardStartIndices, int totalCount, Action<T> action)
         {
-            _threadPool.ExecuteForEachSharded(shards, shardStartIndices, totalCount, action);
+            _tickExecutor.ExecuteForEachSharded(shards, shardStartIndices, totalCount, action);
         }
 
-        public static T GetObjectForTick<T>() where T : IPooledObject<T>, new()
+        public static T GetObjectForTick<T>() where T : ITickPooledObject<T>, new()
         {
-            return _threadPool != null ? _threadPool.GetObjectForTick<T>() : new();
+            return _tickExecutor != null ? _tickExecutor.GetObjectForTick<T>() : new();
         }
 
-        public static List<T> GetListForTick<T>() where T : IPooledList<T>
+        public static List<T> GetListForTick<T>() where T : ITickPooledList<T>
         {
-            return _threadPool != null ? _threadPool.GetListForTick<T>() : new();
+            return _tickExecutor != null ? _tickExecutor.GetListForTick<T>() : new();
         }
 
         private static void Run()
         {
             if (DegreeOfParallelism == 1)
-                _threadPool = new GameLoopThreadPoolSingleThreaded();
+                _tickExecutor = new SerialTickExecutor();
             else
-                _threadPool = new GameLoopThreadPoolMultiThreaded(DegreeOfParallelism);
+                _tickExecutor = new ParallelTickExecutor(DegreeOfParallelism);
 
-            _threadPool.Init(); // Must be done from the game loop thread.
+            _tickExecutor.Init(); // Must be done from the game loop thread.
             BuildTickSequence();
 
             while (Volatile.Read(ref _running))

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 
 namespace DOL.GS
 {
-    public sealed class GameLoopThreadPoolSingleThreaded : GameLoopThreadPool
+    public sealed class SerialTickExecutor : TickExecutor
     {
-        public GameLoopThreadPoolSingleThreaded() { }
+        public SerialTickExecutor() { }
 
         public override void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action)
         {

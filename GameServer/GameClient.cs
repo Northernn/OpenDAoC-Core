@@ -16,7 +16,7 @@ using DOL.Network;
 
 namespace DOL.GS
 {
-    public class GameClient : BaseClient, ICustomParamsValuable, IServiceObject, IPooledList<GameClient>
+    public class GameClient : BaseClient, ICustomParamsValuable, IServiceObject, ITickPooledList<GameClient>
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
         private ConcurrentDictionary<int, ConcurrentDictionary<int, long>> _tooltipRequestTimes = new();
@@ -386,7 +386,7 @@ namespace DOL.GS
                     return;
                 }
 
-                var packet = PooledObjectFactory.GetForTick<GSPacketIn>().Init();
+                var packet = GameLoop.GetObjectForTick<GSPacketIn>().Init();
                 packet.Load(buffer, currentOffset, packetLength);
 
                 try

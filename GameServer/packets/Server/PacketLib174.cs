@@ -34,7 +34,7 @@ namespace DOL.GS.PacketHandler
 				default: throw new Exception("CharacterOverview requested for unknown realm " + realm);
 			}
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CharacterOverview)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CharacterOverview)))
 			{
 				pak.FillString(m_gameClient.Account.Name, 24);
 				List<DbInventoryItem> items;
@@ -252,7 +252,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null || playerToCreate.IsVisibleTo(m_gameClient.Player) == false)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PlayerCreate172)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PlayerCreate172)))
 			{
 				pak.WriteShort(playerToCreate.Client.SessionID);
 				pak.WriteShort((ushort)playerToCreate.ObjectID);
@@ -297,7 +297,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (m_gameClient.Player == null) return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
 			{
 				pak.WriteShort((ushort)m_gameClient.Player.ObjectID); //This is the player's objectid not Sessionid!!!
 				pak.WriteShort((ushort)m_gameClient.Player.Z);
@@ -340,7 +340,7 @@ namespace DOL.GS.PacketHandler
 
 			bool hasData = false;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.GroupMemberUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.GroupMemberUpdate)))
 			{
 				foreach (GameLiving living in livings)
 				{
@@ -387,7 +387,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 			SendRegions(m_gameClient.Player.CurrentRegion.Skin);
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.RegionChanged)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.RegionChanged)))
 			{
 				//Dinberg - Changing to allow instances...
 				pak.WriteShort(m_gameClient.Player.CurrentRegion.Skin);
@@ -445,7 +445,7 @@ namespace DOL.GS.PacketHandler
 				}
 			}
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SpellEffectAnimation)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SpellEffectAnimation)))
 			{
 				ushort casterObjectId;
 
@@ -525,7 +525,7 @@ namespace DOL.GS.PacketHandler
 				OwnerDF = eRealm.Hibernia;
 				OwnerDFTowers = HibTowers;
 			}
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.WarmapBonuses)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.WarmapBonuses)))
 			{
 				int RealmKeeps = 0;
 				int RealmTowers = 0;
@@ -560,7 +560,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null || living.IsVisibleTo(m_gameClient.Player) == false)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
 			{
 
 				List<DbInventoryItem> items = null;
@@ -614,7 +614,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null || living == null)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 
 				pak.WriteShort((ushort)living.ObjectID);

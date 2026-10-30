@@ -27,7 +27,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendLivingEquipmentUpdate(GameLiving living)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
 			{
 				List<DbInventoryItem> items = null;
 				if (living.Inventory != null)
@@ -128,7 +128,7 @@ namespace DOL.GS.PacketHandler
 		/// <param name="windowType"></param>
 		protected override void SendInventoryItemsPartialUpdate(IDictionary<int, DbInventoryItem> items, eInventoryWindowType windowType)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.InventoryUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.InventoryUpdate)))
 			{
 				GameVault houseVault = m_gameClient.Player.ActiveInventoryObject as GameVault;
 				pak.WriteByte((byte)items.Count);
@@ -159,7 +159,7 @@ namespace DOL.GS.PacketHandler
 		/// </summary>
 		protected override void SendInventorySlotsUpdateRange(List<eInventorySlot> slots, eInventoryWindowType windowType)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.InventoryUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.InventoryUpdate)))
 			{
 				GameVault houseVault = m_gameClient.Player.ActiveInventoryObject as GameVault;
 
@@ -398,7 +398,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendHouse(House house)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseCreate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseCreate)))
 			{
 				pak.WriteShort((ushort)house.HouseNumber);
 				pak.WriteShort((ushort)house.Z);
@@ -433,7 +433,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendGarden(House house)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
 			{
 				pak.WriteShort((ushort)house.HouseNumber);
 				pak.WriteShort(0); // sheduled for repossession (in hours) new in 1.89b+
@@ -455,7 +455,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendGarden(House house, int i)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
 			{
 				pak.WriteShort((ushort)house.HouseNumber);
 				pak.WriteShort(0); // sheduled for repossession (in hours) new in 1.89b+
@@ -472,7 +472,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendHouseOccupied(House house, bool flagHouseOccuped)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseChangeGarden)))
 			{
 				pak.WriteShort((ushort)house.HouseNumber);
 				pak.WriteShort(0); // sheduled for repossession (in hours) new in 1.89b+
@@ -485,7 +485,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendEnterHouse(House house)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseEnter)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.HouseEnter)))
 			{
 				pak.WriteShort((ushort)house.HouseNumber);
 				pak.WriteShort((ushort)25000);         //constant!

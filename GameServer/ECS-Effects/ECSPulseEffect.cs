@@ -3,7 +3,7 @@ using DOL.GS.Effects;
 
 namespace DOL.GS
 {
-    public class ECSPulseEffect : ECSGameSpellEffect, IConcentrationEffect, IPooledList<ECSPulseEffect>
+    public class ECSPulseEffect : ECSGameSpellEffect, IConcentrationEffect, ITickPooledList<ECSPulseEffect>
     {
         /// <summary>
         /// The name of the owner

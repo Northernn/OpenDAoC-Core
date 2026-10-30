@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace DOL.GS
 {
-    public abstract class GameLoopThreadPool : IDisposable
+    public abstract class TickExecutor : IDisposable
     {
         [ThreadStatic] private static TickObjectPoolManager _tickObjectPoolManager;
         [ThreadStatic] private static TickListPoolManager _tickListPoolManager;
@@ -18,12 +18,12 @@ namespace DOL.GS
         public abstract void ExecuteForEachSharded<T>(List<T>[] shards, int[] shardStartIndices, int totalCount, Action<T> action);
         public abstract void Dispose();
 
-        public T GetObjectForTick<T>() where T : IPooledObject<T>, new()
+        public T GetObjectForTick<T>() where T : ITickPooledObject<T>, new()
         {
             return _tickObjectPoolManager != null ? _tickObjectPoolManager.GetForTick<T>() : new();
         }
 
-        public List<T> GetListForTick<T>() where T : IPooledList<T>
+        public List<T> GetListForTick<T>() where T : ITickPooledList<T>
         {
             return _tickListPoolManager != null ? _tickListPoolManager.GetForTick<T>() : new();
         }

@@ -35,7 +35,7 @@ namespace DOL.GS.PacketHandler
 		/// <param name="info"></param>
 		public override void SendDelveInfo(string info)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.DelveInfo)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.DelveInfo)))
 			{
 				pak.WriteString(info, 2048);
 				pak.WriteByte(0); // 0-terminated
@@ -53,7 +53,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.UpdateIcons)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.UpdateIcons)))
 			{
 				long initPos = pak.Position;
 
@@ -218,7 +218,7 @@ namespace DOL.GS.PacketHandler
         {
             if (siegeWeapon == null)
                 return;
-            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+            using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
             {
                 bool isGroundTargetValid = siegeWeapon.GroundTarget.IsValid;
 
@@ -256,7 +256,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (siegeWeapon == null)
 				return;
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
 			{
 				pak.WriteInt((uint) siegeWeapon.ObjectID);
 				pak.WriteInt((uint) (siegeWeapon.TargetObject == null ? siegeWeapon.GroundTarget.X : siegeWeapon.TargetObject.X));

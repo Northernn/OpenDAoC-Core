@@ -29,7 +29,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (m_gameClient.Player == null) return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
 			{
 				pak.WriteShort((ushort)m_gameClient.Player.ObjectID); //This is the player's objectid not Sessionid!!!
 				pak.WriteShort((ushort)m_gameClient.Player.Z);
@@ -62,7 +62,7 @@ namespace DOL.GS.PacketHandler
 			if (obj.IsVisibleTo(m_gameClient.Player) == false)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ObjectCreate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ObjectCreate)))
 			{
 				pak.WriteShort((ushort)obj.ObjectID);
 				if (obj is GameStaticItem)
@@ -140,7 +140,7 @@ namespace DOL.GS.PacketHandler
 				return;
 			}
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.NPCCreate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.NPCCreate)))
 			{
 				short speed = 0;
 				ushort speedZ = 0;
@@ -267,7 +267,7 @@ namespace DOL.GS.PacketHandler
 		public override void SendFindGroupWindowUpdate(GamePlayer[] list)
 		{
 			if (m_gameClient.Player == null) return;
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.FindGroupUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.FindGroupUpdate)))
 			{
 				if (list != null)
 				{
@@ -311,7 +311,7 @@ namespace DOL.GS.PacketHandler
 
 		protected override void SendQuestPacket(AbstractQuest quest, byte index)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 			{
 				pak.WriteByte(index);
 				if (quest.Step <= 0)
@@ -342,7 +342,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendLivingDataUpdate(GameLiving living, bool updateStrings)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ObjectDataUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ObjectDataUpdate)))
 			{
 				pak.WriteShort((ushort)living.ObjectID);
 				pak.WriteByte(0);
@@ -370,7 +370,7 @@ namespace DOL.GS.PacketHandler
 		public override void SendPlayerFreeLevelUpdate()
 		{
 			GamePlayer player = m_gameClient.Player;
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort((ushort)player.ObjectID);
 				pak.WriteByte(0x09); // subcode
@@ -404,7 +404,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendRegionColorScheme(byte color)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort(0); // not used
 				pak.WriteByte(0x05); // subcode
