@@ -3,16 +3,28 @@ using System.Collections.Generic;
 
 namespace DOL.GS
 {
+    public readonly record struct TickExecutorInitParams(Action<Exception> OnFatalError, Func<long> TickSource);
+
     public abstract class TickExecutor : IDisposable
     {
         [ThreadStatic] private static TickObjectPoolManager _tickObjectPoolManager;
         [ThreadStatic] private static TickListPoolManager _tickListPoolManager;
         [ThreadStatic] private static long _lastResetTick;
 
-        public virtual void Init()
+        protected readonly Action<Exception> _onFatalError;
+        private readonly Func<long> _tickSource;
+
+        protected TickExecutor(TickExecutorInitParams initParams)
         {
+            ArgumentNullException.ThrowIfNull(initParams.OnFatalError);
+            ArgumentNullException.ThrowIfNull(initParams.TickSource);
+
+            _onFatalError = initParams.OnFatalError;
+            _tickSource = initParams.TickSource;
             InitThreadStatics();
         }
+
+        public virtual void Start() { }
 
         public abstract void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action);
         public abstract void ExecuteForEachSharded<T>(List<T>[] shards, int[] shardStartIndices, int totalCount, Action<T> action);
@@ -42,12 +54,14 @@ namespace DOL.GS
 
         protected void CheckResetTick()
         {
-            if (_lastResetTick == GameLoop.GameLoopTime)
+            long tick = _tickSource();
+
+            if (_lastResetTick == tick)
                 return;
 
             _tickObjectPoolManager.Reset();
             _tickListPoolManager.Reset();
-            _lastResetTick = GameLoop.GameLoopTime;
+            _lastResetTick = tick;
         }
     }
 }

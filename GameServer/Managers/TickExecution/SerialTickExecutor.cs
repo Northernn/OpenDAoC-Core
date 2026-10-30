@@ -5,7 +5,8 @@ namespace DOL.GS
 {
     public sealed class SerialTickExecutor : TickExecutor
     {
-        public SerialTickExecutor() { }
+        public SerialTickExecutor(TickExecutorInitParams initParams)
+            : base(initParams) { }
 
         public override void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action)
         {

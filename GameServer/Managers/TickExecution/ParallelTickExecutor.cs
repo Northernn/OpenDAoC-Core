@@ -21,19 +21,20 @@ namespace DOL.GS
 
         // Thread pool configuration and state.
         private bool _running;
-        private int _degreeOfParallelism;               // Total threads, including caller.
-        private int _workerCount;                       // Number of dedicated worker threads (= _degreeOfParallelism - 1).
-        private double[] _workSplitBiasTable;           // Lookup table for chunk size biasing.
+        private readonly int _degreeOfParallelism;      // Total threads, including caller.
+        private readonly int _workerCount;              // Number of dedicated worker threads (= _degreeOfParallelism - 1).
+        private readonly string _threadNamePrefix;
+        private readonly double[] _workSplitBiasTable;  // Lookup table for chunk size biasing.
 
         // Thread management.
-        private Thread[] _workers;                      // Worker threads (excludes caller).
-        private long[] _workerCycle;                    // Worker cycle phase, used to detect stuck threads.
+        private readonly Thread[] _workers;             // Worker threads (excludes caller).
+        private readonly long[] _workerCycle;           // Worker cycle phase, used to detect stuck threads.
         private TickWorkerWatchdog _watchdog;           // Monitors worker health; restarts if needed.
-        private CancellationTokenSource _shutdownToken;
+        private readonly CancellationTokenSource _shutdownToken;
 
         // Work coordination.
         private CountdownEvent _workerStartLatch;       // Signals when all workers are initialized.
-        private SemaphoreSlim  _workReady;              // Signals when work is available for workers to process.
+        private readonly SemaphoreSlim  _workReady;     // Signals when work is available for workers to process.
         private readonly ConcurrentQueue<(int Start, int End)> _orphanedRanges = new();
         private uint _orphanedCount;
 
@@ -49,55 +50,58 @@ namespace DOL.GS
             [FieldOffset(128)] public int CompletedWorkerCount;  // Count of workers finished for current iteration.
         }
 
-        public ParallelTickExecutor(int degreeOfParallelism)
+        public ParallelTickExecutor(int degreeOfParallelism, string threadNamePrefix, TickExecutorInitParams initParams)
+            : base(initParams)
         {
+            ArgumentOutOfRangeException.ThrowIfLessThan(degreeOfParallelism, 1);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(degreeOfParallelism, MAX_DEGREE_OF_PARALLELISM);
+
             _degreeOfParallelism = degreeOfParallelism;
-        }
-
-        public override void Init()
-        {
-            if (Interlocked.CompareExchange(ref _running, true, false))
-                return;
-
-            Configure();
-            BuildChunkDivisorTable();
-            StartWorkers();
-            StartWatchdog();
-        }
-
-        private void Configure()
-        {
             _workerCount = _degreeOfParallelism - 1;
+            _threadNamePrefix = threadNamePrefix ?? nameof(ParallelTickExecutor);
+
             _workers = new Thread[_workerCount];
             _workerCycle = new long[_workerCount];
             _workerStartLatch = new(_workerCount);
             _workReady = new(0, _workerCount);
             _shutdownToken = new();
-            base.Init();
+            _workSplitBiasTable = BuildChunkDivisorTable(_degreeOfParallelism);
         }
 
-        private void BuildChunkDivisorTable()
+        public override void Start()
         {
-            _workSplitBiasTable = new double[_degreeOfParallelism + 1];
+            if (Interlocked.CompareExchange(ref _running, true, false))
+                return;
 
-            for (int i = 1; i <= _degreeOfParallelism; i++)
-                _workSplitBiasTable[i] = Math.Pow(i, WORK_SPLIT_BIAS_FACTOR);
+            StartWorkers();
+            StartWatchdog();
+        }
 
-            _workSplitBiasTable[0] = 1; // Prevent division by zero, fallback.
+        private static double[] BuildChunkDivisorTable(int degreeOfParallelism)
+        {
+            double[] workSplitBiasTable = new double[degreeOfParallelism + 1];
+
+            for (int i = 1; i <= degreeOfParallelism; i++)
+                workSplitBiasTable[i] = Math.Pow(i, WORK_SPLIT_BIAS_FACTOR);
+
+            workSplitBiasTable[0] = 1; // Prevent division by zero, fallback.
+            return workSplitBiasTable;
+        }
+
+        private void CreateWorker(int id, bool isRestart)
+        {
+            Thread worker = new(new ParameterizedThreadStart(InitWorker))
+            {
+                Name = $"{_threadNamePrefix}_Worker_{id}",
+                IsBackground = true
+            };
+            worker.Start((id, isRestart));
         }
 
         private void StartWorkers()
         {
             for (int i = 0; i < _workerCount; i++)
-            {
-                Thread worker = new(new ParameterizedThreadStart(InitWorker))
-                {
-                    Name = $"{GameLoop.THREAD_NAME}_Worker_{i}",
-                    IsBackground = true
-                };
-                worker.Start((i, false));
-            }
+                CreateWorker(i, false);
 
             _workerStartLatch.Wait(); // If for some reason a thread fails to start, we'll be waiting here forever.
         }
@@ -122,10 +126,7 @@ namespace DOL.GS
             }
             catch (Exception e)
             {
-                if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
-
-                GameServer.Instance.Stop();
+                HandleFatal(e);
             }
             finally
             {
@@ -145,10 +146,7 @@ namespace DOL.GS
             }
             catch (Exception e)
             {
-                if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
-
-                GameServer.Instance.Stop();
+                HandleFatal(e);
             }
             finally
             {
@@ -244,12 +242,7 @@ namespace DOL.GS
                     log.Warn($"Restarting thread \"{_workers[id].Name}\"");
 
                 _workers[id] = null;
-                Thread newThread = new(new ParameterizedThreadStart(InitWorker))
-                {
-                    Name = $"{GameLoop.THREAD_NAME}_Worker_{id}",
-                    IsBackground = true,
-                };
-                newThread.Start((id, true));
+                CreateWorker(id, true);
             }
         }
 
@@ -282,10 +275,7 @@ namespace DOL.GS
                 }
                 catch (Exception e)
                 {
-                    if (log.IsFatalEnabled)
-                        log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
-
-                    GameServer.Instance.Stop();
+                    HandleFatal(e);
                     break;
                 }
                 finally
@@ -356,6 +346,14 @@ namespace DOL.GS
             {
                 SynchronizationContext.SetSynchronizationContext(previousContext);
             }
+        }
+
+        private void HandleFatal(Exception e)
+        {
+            if (log.IsFatalEnabled)
+                log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
+
+            _onFatalError(e);
         }
 
         private static class WorkProcessorCache<T>

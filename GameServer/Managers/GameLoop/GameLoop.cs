@@ -83,12 +83,16 @@ namespace DOL.GS
 
         private static void Run()
         {
-            if (DegreeOfParallelism == 1)
-                _tickExecutor = new SerialTickExecutor();
-            else
-                _tickExecutor = new ParallelTickExecutor(DegreeOfParallelism);
+            TickExecutorInitParams initParams = new(
+                static _ => GameServer.Instance.Stop(),
+                static () => GameLoopTime);
 
-            _tickExecutor.Init(); // Must be done from the game loop thread.
+            if (DegreeOfParallelism == 1)
+                _tickExecutor = new SerialTickExecutor(initParams);
+            else
+                _tickExecutor = new ParallelTickExecutor(DegreeOfParallelism, THREAD_NAME, initParams);
+
+            _tickExecutor.Start(); // Must be done from the game loop thread.
             BuildTickSequence();
 
             while (Volatile.Read(ref _running))
