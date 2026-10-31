@@ -6,7 +6,7 @@ namespace DOL.GS.PacketHandler
     /// <summary>
     /// Outgoing game server UDP packet
     /// </summary>
-    public class GSUDPPacketOut : PacketOut, IPooledObject<GSUDPPacketOut>
+    public class GSUDPPacketOut : PacketOut, ITickPooledObject<GSUDPPacketOut>
     {
         public GSUDPPacketOut() { }
 
@@ -31,7 +31,7 @@ namespace DOL.GS.PacketHandler
             return $"{base.ToString()}: Size={Length - 5} ID=0x{Code:X2}";
         }
 
-        // IPooledObject<T> implementation.
+        // ITickPooledObject<T> implementation.
         public long IssuedTimestamp { get; set; }
     }
 }

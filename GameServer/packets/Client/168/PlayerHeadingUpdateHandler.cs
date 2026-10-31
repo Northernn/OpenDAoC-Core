@@ -68,7 +68,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 
         private static GSUDPPacketOut CreateOutPak1127(GameClient client, GamePlayer player, ushort heading, byte steedSeatPosition, byte actionFlags, byte stateFlags, byte healthByte)
         {
-            var outPak = PooledObjectFactory.GetForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
+            var outPak = GameLoop.GetObjectForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
             outPak.WriteShort(client.SessionID);
             outPak.WriteShort(0); // Current target.
             outPak.WriteShort(heading);
@@ -85,7 +85,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 
         private static GSUDPPacketOut CreateOutPak1124(GameClient client, GamePlayer player, ushort heading, byte steedSeatPosition, byte actionFlags, byte stateFlags, byte healthByte)
         {
-            var outPak = PooledObjectFactory.GetForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
+            var outPak = GameLoop.GetObjectForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
             outPak.WriteShort(client.SessionID);
             outPak.WriteShort(heading);
             outPak.WriteByte(steedSeatPosition);
@@ -101,7 +101,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 
         private static GSUDPPacketOut CreateOutPak190(GameClient client, GamePlayer player, ushort heading, byte steedSeatPosition, byte actionFlags, byte stateFlags, byte healthByte)
         {
-            var outPak = PooledObjectFactory.GetForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
+            var outPak = GameLoop.GetObjectForTick<GSUDPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.PlayerHeading));
             outPak.WriteShort(client.SessionID);
             outPak.WriteShort(heading);
             outPak.WriteByte(0); // Unknown.

@@ -6,7 +6,7 @@ namespace DOL.GS.PacketHandler
     /// <summary>
     /// Game server specific packet
     /// </summary>
-    public class GSPacketIn : PacketIn, IPooledObject<GSPacketIn>
+    public class GSPacketIn : PacketIn, ITickPooledObject<GSPacketIn>
     {
         /// <summary>
         /// Header size including checksum at the end of the packet
@@ -122,7 +122,7 @@ namespace DOL.GS.PacketHandler
             return string.Format($"{nameof(GSPacketIn)}: Size={m_psize} Sequence=0x{m_sequence:X4} Session={m_sessionID} Parameter={m_parameter} ID=0x{m_code:X2}");
         }
 
-        // IPooledObject<T> implementation.
+        // ITickPooledObject<T> implementation.
         public long IssuedTimestamp { get; set; }
     }
 }

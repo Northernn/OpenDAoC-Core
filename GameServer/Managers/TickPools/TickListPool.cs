@@ -4,7 +4,7 @@ using DOL.Logging;
 
 namespace DOL.GS
 {
-    public sealed class TickListPool<T> : TickPool<List<T>> where T : IPooledList<T>
+    public sealed class TickListPool<T> : TickPool<List<T>> where T : ITickPooledList<T>
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 

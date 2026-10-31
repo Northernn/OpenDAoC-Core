@@ -3,7 +3,7 @@ namespace DOL.GS
     /// <summary>
     /// Ability-Based Effect
     /// </summary>
-    public class ECSGameAbilityEffect : ECSGameEffect, IPooledList<ECSGameAbilityEffect>
+    public class ECSGameAbilityEffect : ECSGameEffect, ITickPooledList<ECSGameAbilityEffect>
     {
         public override string Name => "Default Ability Name";
 

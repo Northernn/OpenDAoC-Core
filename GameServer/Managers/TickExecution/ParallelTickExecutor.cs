@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -7,8 +8,7 @@ using DOL.Logging;
 
 namespace DOL.GS
 {
-    // A very specialized thread pool, meant to be used by the game loop and its dedicated thread exclusively.
-    public sealed class GameLoopThreadPoolMultiThreaded : GameLoopThreadPool
+    public sealed class ParallelTickExecutor : TickExecutor
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -21,19 +21,22 @@ namespace DOL.GS
 
         // Thread pool configuration and state.
         private bool _running;
-        private int _degreeOfParallelism;               // Total threads, including caller.
-        private int _workerCount;                       // Number of dedicated worker threads (= _degreeOfParallelism - 1).
-        private double[] _workSplitBiasTable;           // Lookup table for chunk size biasing.
+        private readonly int _degreeOfParallelism;      // Total threads, including caller.
+        private readonly int _workerCount;              // Number of dedicated worker threads (= _degreeOfParallelism - 1).
+        private readonly string _threadNamePrefix;
+        private readonly double[] _workSplitBiasTable;  // Lookup table for chunk size biasing.
 
         // Thread management.
-        private Thread[] _workers;                      // Worker threads (excludes caller).
-        private long[] _workerCycle;                    // Worker cycle phase, used to detect stuck threads.
-        private GameLoopThreadPoolWatchdog _watchdog;   // Monitors worker health; restarts if needed.
-        private CancellationTokenSource _shutdownToken;
+        private readonly Thread[] _workers;             // Worker threads (excludes caller).
+        private readonly long[] _workerCycle;           // Worker cycle phase, used to detect stuck threads.
+        private TickWorkerWatchdog _watchdog;           // Monitors worker health; restarts if needed.
+        private readonly CancellationTokenSource _shutdownToken;
 
         // Work coordination.
         private CountdownEvent _workerStartLatch;       // Signals when all workers are initialized.
-        private SemaphoreSlim  _workReady;
+        private readonly SemaphoreSlim  _workReady;     // Signals when work is available for workers to process.
+        private readonly ConcurrentQueue<(int Start, int End)> _orphanedRanges = new();
+        private uint _orphanedCount;
 
         // Work processing.
         private WorkProcessor _workProcessor;           // Current work processor instance, reused for each execution.
@@ -47,55 +50,58 @@ namespace DOL.GS
             [FieldOffset(128)] public int CompletedWorkerCount;  // Count of workers finished for current iteration.
         }
 
-        public GameLoopThreadPoolMultiThreaded(int degreeOfParallelism)
+        public ParallelTickExecutor(int degreeOfParallelism, string threadNamePrefix, TickExecutorInitParams initParams)
+            : base(initParams)
         {
+            ArgumentOutOfRangeException.ThrowIfLessThan(degreeOfParallelism, 1);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(degreeOfParallelism, MAX_DEGREE_OF_PARALLELISM);
+
             _degreeOfParallelism = degreeOfParallelism;
-        }
-
-        public override void Init()
-        {
-            if (Interlocked.CompareExchange(ref _running, true, false))
-                return;
-
-            Configure();
-            BuildChunkDivisorTable();
-            StartWorkers();
-            StartWatchdog();
-        }
-
-        private void Configure()
-        {
             _workerCount = _degreeOfParallelism - 1;
+            _threadNamePrefix = threadNamePrefix ?? nameof(ParallelTickExecutor);
+
             _workers = new Thread[_workerCount];
             _workerCycle = new long[_workerCount];
             _workerStartLatch = new(_workerCount);
             _workReady = new(0, _workerCount);
             _shutdownToken = new();
-            base.Init();
+            _workSplitBiasTable = BuildChunkDivisorTable(_degreeOfParallelism);
         }
 
-        private void BuildChunkDivisorTable()
+        public override void Start()
         {
-            _workSplitBiasTable = new double[_degreeOfParallelism + 1];
+            if (Interlocked.CompareExchange(ref _running, true, false))
+                return;
 
-            for (int i = 1; i <= _degreeOfParallelism; i++)
-                _workSplitBiasTable[i] = Math.Pow(i, WORK_SPLIT_BIAS_FACTOR);
+            StartWorkers();
+            StartWatchdog();
+        }
 
-            _workSplitBiasTable[0] = 1; // Prevent division by zero, fallback.
+        private static double[] BuildChunkDivisorTable(int degreeOfParallelism)
+        {
+            double[] workSplitBiasTable = new double[degreeOfParallelism + 1];
+
+            for (int i = 1; i <= degreeOfParallelism; i++)
+                workSplitBiasTable[i] = Math.Pow(i, WORK_SPLIT_BIAS_FACTOR);
+
+            workSplitBiasTable[0] = 1; // Prevent division by zero, fallback.
+            return workSplitBiasTable;
+        }
+
+        private void CreateWorker(int id, bool isRestart)
+        {
+            Thread worker = new(new ParameterizedThreadStart(InitWorker))
+            {
+                Name = $"{_threadNamePrefix}_Worker_{id}",
+                IsBackground = true
+            };
+            worker.Start((id, isRestart));
         }
 
         private void StartWorkers()
         {
             for (int i = 0; i < _workerCount; i++)
-            {
-                Thread worker = new(new ParameterizedThreadStart(InitWorker))
-                {
-                    Name = $"{GameLoop.THREAD_NAME}_Worker_{i}",
-                    IsBackground = true
-                };
-                worker.Start((i, false));
-            }
+                CreateWorker(i, false);
 
             _workerStartLatch.Wait(); // If for some reason a thread fails to start, we'll be waiting here forever.
         }
@@ -120,10 +126,7 @@ namespace DOL.GS
             }
             catch (Exception e)
             {
-                if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
-
-                GameServer.Instance.Stop();
+                HandleFatal(e);
             }
             finally
             {
@@ -143,10 +146,7 @@ namespace DOL.GS
             }
             catch (Exception e)
             {
-                if (log.IsFatalEnabled)
-                    log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
-
-                GameServer.Instance.Stop();
+                HandleFatal(e);
             }
             finally
             {
@@ -175,6 +175,31 @@ namespace DOL.GS
             // However we really don't want to yield the CPU here, as this could delay the return by a lot.
             while (Volatile.Read(ref _workState.CompletedWorkerCount) < workersToStart + 1)
                 Thread.SpinWait(1);
+
+            // If any workers were interrupted while processing, we need to process the orphaned ranges here on the caller thread.
+            if (Volatile.Read(ref _orphanedCount) > 0)
+                DrainOrphanedRanges();
+        }
+
+        private void DrainOrphanedRanges()
+        {
+            try
+            {
+                while (_orphanedRanges.TryDequeue(out var range))
+                {
+                    int inFlight = range.Start - 1;
+                    _workProcessor.Process(range.Start, range.End, ref inFlight);
+                }
+            }
+            catch
+            {
+                _orphanedRanges.Clear();
+                throw;
+            }
+            finally
+            {
+                Volatile.Write(ref _orphanedCount, 0);
+            }
         }
 
         public override void Dispose()
@@ -201,7 +226,7 @@ namespace DOL.GS
         {
             (int Id, _) = ((int, bool)) obj;
             _workers[Id] = Thread.CurrentThread;
-            _workerCycle[Id] = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
+            _workerCycle[Id] = TickWorkerWatchdog.IDLE_CYCLE;
             base.InitWorker(obj);
             _workerStartLatch.Signal();
             RunWorkerLoop(Id, _shutdownToken.Token);
@@ -217,25 +242,23 @@ namespace DOL.GS
                     log.Warn($"Restarting thread \"{_workers[id].Name}\"");
 
                 _workers[id] = null;
-                Thread newThread = new(new ParameterizedThreadStart(InitWorker))
-                {
-                    Name = $"{GameLoop.THREAD_NAME}_Worker_{id}",
-                    IsBackground = true,
-                };
-                newThread.Start((id, true));
+                CreateWorker(id, true);
             }
         }
 
         private void RunWorkerLoop(int id, CancellationToken cancellationToken)
         {
             ref long workerCycle = ref _workerCycle[id];
-            long cycle = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
+            long cycle = TickWorkerWatchdog.IDLE_CYCLE;
 
             while (Volatile.Read(ref _running))
             {
+                bool acquiredWork = false;
+
                 try
                 {
                     _workReady.Wait(cancellationToken);
+                    acquiredWork = true;
                     workerCycle = ++cycle;
                     ProcessWorkActions();
                 }
@@ -252,16 +275,15 @@ namespace DOL.GS
                 }
                 catch (Exception e)
                 {
-                    if (log.IsFatalEnabled)
-                        log.Fatal($"Critical error encountered in \"{nameof(GameLoopThreadPoolMultiThreaded)}\"", e);
-
-                    GameServer.Instance.Stop();
+                    HandleFatal(e);
                     break;
                 }
                 finally
                 {
-                    workerCycle = GameLoopThreadPoolWatchdog.IDLE_CYCLE;
-                    Interlocked.Increment(ref _workState.CompletedWorkerCount);
+                    workerCycle = TickWorkerWatchdog.IDLE_CYCLE;
+
+                    if (acquiredWork)
+                        Interlocked.Increment(ref _workState.CompletedWorkerCount);
                 }
             }
 
@@ -296,7 +318,27 @@ namespace DOL.GS
                     if (start < 0)
                         start = 0;
 
-                    _workProcessor.Process(start, end);
+                    int inFlight = start - 1;
+
+                    try
+                    {
+                        _workProcessor.Process(start, end, ref inFlight);
+                    }
+                    catch (ThreadInterruptedException e)
+                    {
+                        // Skip the in-flight item, orphan everything after it.
+                        if (inFlight + 1 < end)
+                        {
+                            _orphanedRanges.Enqueue((inFlight + 1, end));
+                            Interlocked.Increment(ref _orphanedCount);
+                        }
+
+                        if (log.IsWarnEnabled)
+                            log.Warn($"Interrupted while processing item {inFlight} of [{start}, {end})", e);
+
+                        throw;
+                    }
+
                     remainingWork = start - 1;
                 }
             }
@@ -304,6 +346,14 @@ namespace DOL.GS
             {
                 SynchronizationContext.SetSynchronizationContext(previousContext);
             }
+        }
+
+        private void HandleFatal(Exception e)
+        {
+            if (log.IsFatalEnabled)
+                log.Fatal($"Critical error encountered in \"{nameof(ParallelTickExecutor)}\"", e);
+
+            _onFatalError(e);
         }
 
         private static class WorkProcessorCache<T>
@@ -330,10 +380,20 @@ namespace DOL.GS
                 return this;
             }
 
-            public override void Process(int start, int end)
+            public override void Process(int start, int end, ref int inFlight)
             {
-                for (int i = start; i < end; i++)
-                    _action(_items[i]);
+                int current = start;
+
+                try
+                {
+                    for (; current < end; current++)
+                        _action(_items[current]);
+                }
+                catch
+                {
+                    inFlight = current;
+                    throw;
+                }
             }
 
             public void Clear()
@@ -363,44 +423,56 @@ namespace DOL.GS
                 return this;
             }
 
-            public override void Process(int start, int end)
+            public override void Process(int start, int end, ref int inFlight)
             {
-                int currentShardIdx = _shardStartIndices.Length - 1;
+                int current = start;
 
-                while (currentShardIdx > 0 && start < _shardStartIndices[currentShardIdx])
-                    currentShardIdx--;
-
-                int itemsLeft = end - start;
-                int localIdx = start - _shardStartIndices[currentShardIdx];
-
-                while (itemsLeft > 0)
+                try
                 {
-                    int shardValidCount;
+                    int currentShardIdx = _shardStartIndices.Length - 1;
 
-                    // Derive the exact number of valid items in this shard using the boundaries.
-                    if (currentShardIdx < _shardStartIndices.Length - 1)
-                        shardValidCount = _shardStartIndices[currentShardIdx + 1] - _shardStartIndices[currentShardIdx];
-                    else
-                        shardValidCount = _totalCount - _shardStartIndices[currentShardIdx];
+                    while (currentShardIdx > 0 && start < _shardStartIndices[currentShardIdx])
+                        currentShardIdx--;
 
-                    int availableInShard = shardValidCount - localIdx;
-                    int itemsToProcess = Math.Min(itemsLeft, availableInShard);
+                    int itemsLeft = end - start;
+                    int localIdx = start - _shardStartIndices[currentShardIdx];
 
-                    if (itemsToProcess <= 0)
+                    while (itemsLeft > 0)
                     {
+                        // Derive the exact number of valid items in this shard using the boundaries.
+                        int shardValidCount;
+
+                        if (currentShardIdx < _shardStartIndices.Length - 1)
+                            shardValidCount =  _shardStartIndices[currentShardIdx + 1] - _shardStartIndices[currentShardIdx];
+                        else
+                            shardValidCount =  _totalCount - _shardStartIndices[currentShardIdx];
+
+                        int itemsToProcess = Math.Min(itemsLeft, shardValidCount - localIdx);
+
+                        if (itemsToProcess <= 0)
+                        {
+                            currentShardIdx++;
+                            localIdx = 0;
+                            continue;
+                        }
+
+                        List<T> currentShard = _shards[currentShardIdx];
+
+                        for (int i = 0; i < itemsToProcess; i++)
+                        {
+                            _action(currentShard[localIdx + i]);
+                            current++;
+                        }
+
+                        itemsLeft -= itemsToProcess;
                         currentShardIdx++;
                         localIdx = 0;
-                        continue;
                     }
-
-                    List<T> currentShard = _shards[currentShardIdx];
-
-                    for (int i = 0; i < itemsToProcess; i++)
-                        _action(currentShard[localIdx + i]);
-
-                    itemsLeft -= itemsToProcess;
-                    currentShardIdx++;
-                    localIdx = 0;
+                }
+                catch
+                {
+                    inFlight = current;
+                    throw;
                 }
             }
 
@@ -414,7 +486,7 @@ namespace DOL.GS
 
         private abstract class WorkProcessor
         {
-            public abstract void Process(int start, int end);
+            public abstract void Process(int start, int end, ref int inFlight);
         }
     }
 }

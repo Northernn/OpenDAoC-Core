@@ -22,7 +22,7 @@ namespace DOL.GS.PacketHandler
         {
             var titles = m_gameClient.Player.Titles;
 
-            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.DetailWindow)))
+            using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.DetailWindow)))
             {
 
                 pak.WriteByte(1); // new in 1.75

@@ -10,7 +10,7 @@ namespace DOL.GS
         Closed
     }
 
-    public class GameDoorBase : GameLiving, IPooledList<GameDoorBase>
+    public class GameDoorBase : GameLiving, ITickPooledList<GameDoorBase>
     {
         public override eGameObjectType GameObjectType => eGameObjectType.DOOR;
 

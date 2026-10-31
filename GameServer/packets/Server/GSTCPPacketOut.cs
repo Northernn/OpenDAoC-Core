@@ -5,7 +5,7 @@ namespace DOL.GS.PacketHandler
     /// <summary>
     /// An outgoing TCP packet
     /// </summary>
-    public class GSTCPPacketOut : PacketOut, IPooledObject<GSTCPPacketOut>
+    public class GSTCPPacketOut : PacketOut, ITickPooledObject<GSTCPPacketOut>
     {
         public GSTCPPacketOut() { }
 
@@ -29,7 +29,7 @@ namespace DOL.GS.PacketHandler
             return $"{base.ToString()}: Size={Length - 5} ID=0x{Code:X2}";
         }
 
-        // IPooledObject<T> implementation.
+        // ITickPooledObject<T> implementation.
         public long IssuedTimestamp { get; set; }
     }
 }

@@ -155,7 +155,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 					GameServer.Database.DeleteObject((house.IndoorItems[(position)]).DatabaseItem);
 					house.RemoveIndoorItem(position);
 
-					using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.HousingItem)))
+					using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(AbstractPacketLib.GetPacketCode(eServerPackets.HousingItem)))
 					{
 						if (client.Version >= GameClient.eClientVersion.Version1125)
 						{

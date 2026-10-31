@@ -53,7 +53,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendCombatAnimation(GameObject attacker, GameObject defender, ushort weaponID, ushort shieldID, int style, byte stance, byte result, byte targetHealthPercent)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CombatAnimation)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CombatAnimation)))
 			{
 				if (attacker != null)
 				{
@@ -102,7 +102,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendMinotaurRelicMapRemove(byte id)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MinotaurRelicMapRemove)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MinotaurRelicMapRemove)))
 			{
 				pak.WriteIntLowEndian((uint)id);
 				SendTCP(pak);
@@ -111,7 +111,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendMinotaurRelicMapUpdate(byte id, ushort region, int x, int y, int z)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MinotaurRelicMapUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.MinotaurRelicMapUpdate)))
 			{
 				pak.WriteIntLowEndian((uint)id);
 				pak.WriteIntLowEndian((uint)region);
@@ -125,7 +125,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendMinotaurRelicWindow(GamePlayer player, int effect, bool flag)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort((ushort)player.ObjectID);
 				pak.WriteByte((byte)13);
@@ -147,7 +147,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendMinotaurRelicBarUpdate(GamePlayer player, int xp)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.VisualEffect)))
 			{
 				pak.WriteShort((ushort)player.ObjectID);
 				pak.WriteByte((byte)14);

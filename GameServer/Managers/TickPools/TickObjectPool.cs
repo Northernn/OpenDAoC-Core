@@ -3,7 +3,7 @@ using DOL.Logging;
 
 namespace DOL.GS
 {
-    public sealed class TickObjectPool<T> : TickPool<T> where T : IPooledObject<T>, new()
+    public sealed class TickObjectPool<T> : TickPool<T> where T : ITickPooledObject<T>, new()
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
