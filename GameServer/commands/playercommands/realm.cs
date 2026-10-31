@@ -57,73 +57,26 @@ namespace DOL.GS.Commands
 			string midKeeps = string.Empty;
 			string hibKeeps = string.Empty;
 			ICollection<AbstractGameKeep> keepList = GameServer.KeepManager.GetFrontierKeeps();
-			ICollection<AbstractGameKeep> albKeepList = GameServer.KeepManager.GetKeepsOfRegion(1);
-			ICollection<AbstractGameKeep> midKeepList = GameServer.KeepManager.GetKeepsOfRegion(100);
-			ICollection<AbstractGameKeep> hibKeepList = GameServer.KeepManager.GetKeepsOfRegion(200);
 
-			foreach (AbstractGameKeep keep in albKeepList)
-			{
-				if (keep.IsPortalKeep)
-					continue;
+                        foreach (AbstractGameKeep keep in keepList)
+                        {
+                                if (keep is GameKeep)
+                                {
+                                        switch (keep.OriginalRealm)
+                                        {
+                                                case eRealm.Albion:
+                                                        albKeeps += KeepStringBuilder(keep);
+                                                        break;
+                                                case eRealm.Hibernia:
+                                                        hibKeeps += KeepStringBuilder(keep);
+                                                        break;
+                                                case eRealm.Midgard:
+                                                        midKeeps += KeepStringBuilder(keep);
+                                                        break;
+                                        }
+                                }
+                        }
 
-				if (keep.Name.Contains("myrddin", StringComparison.OrdinalIgnoreCase) ||
-					keep.Name.Contains("excalibur", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-				
-				if (keep is GameKeep)
-					albKeeps += KeepStringBuilder(keep);
-			}
-
-			foreach (AbstractGameKeep keep in midKeepList)
-			{
-				if (keep.IsPortalKeep)
-					continue;
-
-				if (keep.Name.Contains("grallarhorn", StringComparison.OrdinalIgnoreCase) ||
-					keep.Name.Contains("mjollner", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-
-				if (keep is GameKeep)
-					midKeeps += KeepStringBuilder(keep);
-			}
-			
-			foreach (AbstractGameKeep keep in hibKeepList)
-			{
-				if (keep.IsPortalKeep)
-					continue;
-
-				if (keep.Name.Contains("dagda", StringComparison.OrdinalIgnoreCase) ||
-					keep.Name.Contains("lamfhota", StringComparison.OrdinalIgnoreCase))
-				{
-					continue;
-				}
-				
-				if (keep is GameKeep)
-					hibKeeps += KeepStringBuilder(keep);
-			}
-			
-			// foreach (AbstractGameKeep keep in keepList)
-			// {
-			// 	if (keep is GameKeep)
-			// 	{
-			// 		switch (keep.OriginalRealm)
-			// 		{
-			// 			case eRealm.Albion:
-			// 				albKeeps += KeepStringBuilder(keep);
-			// 				break;
-			// 			case eRealm.Hibernia:
-			// 				hibKeeps += KeepStringBuilder(keep);
-			// 				break;
-			// 			case eRealm.Midgard:
-			// 				midKeeps += KeepStringBuilder(keep);
-			// 				break;
-			// 		}
-			// 	}
-			// }
 			var realmInfo = new List<string>();
 			realmInfo.Add(LanguageMgr.GetTranslation(client.Account.Language, "Scripts.Players.Realm.AlbKeeps") + ":");
 			realmInfo.Add(albKeeps);
@@ -164,7 +117,9 @@ namespace DOL.GS.Commands
 		private string KeepStringBuilder(AbstractGameKeep keep)
 		{
 			string buffer = string.Empty;
-			buffer += keep.Name + ": " + GlobalConstants.RealmToName(keep.Realm);
+			buffer += keep.Name + ": ";
+                        buffer += "[" + keep.Level + "] ";
+                        buffer += GlobalConstants.RealmToName(keep.Realm);
 			if (keep.Guild != null)
 			{
 				buffer += " (" + keep.Guild.Name + ")";

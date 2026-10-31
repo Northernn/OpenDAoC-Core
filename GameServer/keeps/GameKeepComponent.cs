@@ -293,8 +293,12 @@ namespace DOL.GS.Keeps
 								}
 								break;
 							case "DOL.GS.Keeps.GuardLord":
-								if (Keep.HasLord && log.IsWarnEnabled)
-									log.Warn($"FillPositions(): KeepComponent_ID {InternalID}, KeepPosition_ID {position.ObjectId}: There is already a {position.ClassType} on Keep {Keep.KeepID}");
+								if (Keep.HasLord) {
+									if (log.IsWarnEnabled)
+							  		  log.Warn($"FillPositions(): KeepComponent_ID {InternalID}, KeepPosition_ID {position.ObjectId}: There is already a {position.ClassType} on Keep {Keep.KeepID}");
+									create = false;
+									break;
+								}
 
 								if (Keep.Guards.ContainsKey(sKey) == false)
 								{
