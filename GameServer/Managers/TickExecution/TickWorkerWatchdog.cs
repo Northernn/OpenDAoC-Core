@@ -6,7 +6,7 @@ using DOL.Logging;
 
 namespace DOL.GS
 {
-    public class GameLoopThreadPoolWatchdog
+    public class TickWorkerWatchdog
     {
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -19,7 +19,7 @@ namespace DOL.GS
         private long[] _workerCycle;
         private Action<List<int>> _restartWorkersAction;
 
-        public GameLoopThreadPoolWatchdog(Thread[] workers, long[] workerCycle, Action<List<int>> restartWorkersAction)
+        public TickWorkerWatchdog(Thread[] workers, long[] workerCycle, Action<List<int>> restartWorkersAction)
         {
             _workers = workers ?? throw new ArgumentNullException(nameof(workers));
             _workerCycle = workerCycle ?? throw new ArgumentNullException(nameof(workerCycle));

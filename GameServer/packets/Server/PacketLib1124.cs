@@ -32,7 +32,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null)
 				return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.KeepInfo)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.KeepInfo)))
 			{
 				pak.WriteShort((ushort)keep.KeepID);
 				pak.WriteShort(0);
@@ -51,7 +51,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendLivingEquipmentUpdate(GameLiving living)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.EquipmentUpdate)))
 			{
 				List<DbInventoryItem> items = null;
 				if (living.Inventory != null)
@@ -106,7 +106,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendLoginGranted(byte color)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.LoginGranted)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.LoginGranted)))
 			{
 				pak.WritePascalString(m_gameClient.Account.Name);
 				pak.WritePascalString(GameServer.Instance.Configuration.ServerNameShort); //server name
@@ -134,7 +134,7 @@ namespace DOL.GS.PacketHandler
 				SendMovingObjectCreate(npc as GameMovingObject);
 			else
 			{
-				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.NPCCreate)))
+				using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.NPCCreate)))
 				{
 					short speed = 0;
 					ushort speedZ = 0;
@@ -371,7 +371,7 @@ namespace DOL.GS.PacketHandler
 			if (playerToCreate.Steed != null)
 				m_gameClient.Out.SendNPCCreate(playerToCreate.Steed);
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PlayerCreate172)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PlayerCreate172)))
 			{
 				pak.WriteFloatLowEndian(playerToCreate.X);
 				pak.WriteFloatLowEndian(playerToCreate.Y);
@@ -442,7 +442,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (m_gameClient.Player == null) return;
 
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.PositionAndObjectID)))
 			{
 				if (m_gameClient.Player.X <= 0)
 				{
@@ -491,7 +491,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (quest == null)
 			{
-				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
+				using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 				{
 					pak.WriteByte(index);
 					pak.WriteByte(0);
@@ -506,7 +506,7 @@ namespace DOL.GS.PacketHandler
 			else if (quest is RewardQuest)
 			{
 				RewardQuest rewardQuest = quest as RewardQuest;
-				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
+				using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 				{
 					pak.WriteByte((byte)index);
 					pak.WriteByte((byte)rewardQuest.Name.Length);
@@ -548,7 +548,7 @@ namespace DOL.GS.PacketHandler
 			}
 			else
 			{
-				using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
+				using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.QuestEntry)))
 				{
 					pak.WriteByte(index);
 
@@ -580,7 +580,7 @@ namespace DOL.GS.PacketHandler
 			Region region = WorldMgr.GetRegion(regionId);
 			if (region == null)
 				return;
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ClientRegion)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.ClientRegion)))
 			{
 				//				pak.WriteByte((byte)((region.Expansion + 1) << 4)); // Must be expansion
 				pak.WriteByte(0); // but this packet sended when client in old region. but this field must show expanstion for jump destanation region
@@ -602,7 +602,7 @@ namespace DOL.GS.PacketHandler
 			if (siegeWeapon == null)
 				return;
 			byte[] siegeID = new byte[siegeWeapon.ObjectID]; // test
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
 			{
 				bool isGroundTargetValid = siegeWeapon.GroundTarget.IsValid;
 
@@ -659,7 +659,7 @@ namespace DOL.GS.PacketHandler
 		{
 			if (siegeWeapon == null)
 				return;
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponAnimation)))
 			{
 				pak.WriteInt((uint)siegeWeapon.ObjectID);
 				pak.WriteInt((uint)(siegeWeapon.TargetObject == null ? siegeWeapon.GroundTarget.X : siegeWeapon.TargetObject.X));
@@ -679,7 +679,7 @@ namespace DOL.GS.PacketHandler
 
 		public override void SendSiegeWeaponInterface(GameSiegeWeapon siegeWeapon, int time)
 		{
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponInterface)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.SiegeWeaponInterface)))
 			{
 				ushort flag = (ushort)((siegeWeapon.EnableToMove ? 1 : 0) | siegeWeapon.AmmoType << 8);
 				pak.WriteShort(flag); //byte Ammo,  byte SiegeMoving(1/0)
@@ -747,7 +747,7 @@ namespace DOL.GS.PacketHandler
 		public override void SendVersionAndCryptKey()
 		{
 			//Construct the new packet
-			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CryptKey)))
+			using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.CryptKey)))
 			{
 				pak.WriteByte((byte)m_gameClient.ClientType);
 

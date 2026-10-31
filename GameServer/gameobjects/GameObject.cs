@@ -927,7 +927,7 @@ namespace DOL.GS
 
 		#region ObjectsInRadius
 
-		public List<T> GetObjectsInRadius<T>(eGameObjectType objectType, ushort radiusToCheck) where T : GameObject, IPooledList<T>
+		public List<T> GetObjectsInRadius<T>(eGameObjectType objectType, ushort radiusToCheck) where T : GameObject, ITickPooledList<T>
 		{
 			List<T> result = GameLoop.GetListForTick<T>();
 

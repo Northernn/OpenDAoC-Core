@@ -14,7 +14,7 @@ namespace DOL.GS.PacketHandler
         {
             // work around for character screen bugs when server type sent as 00 but player doesnt have a realm
             // 0x07 allows for characters in all realms
-            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.LoginGranted)))
+            using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.LoginGranted)))
             {
                 pak.WritePascalString(m_gameClient.Account.Name);
                 pak.WritePascalString(GameServer.Instance.Configuration.ServerNameShort); //server name
@@ -41,7 +41,7 @@ namespace DOL.GS.PacketHandler
             if (m_gameClient.ClientState is GameClient.eClientState.CharScreen)
                 return;
 
-            var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.Message));
+            var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.Message));
             pak.WriteByte((byte) type);
 
             // The @@ prefix seems to be technically needed only for the send reply feature.
@@ -58,7 +58,7 @@ namespace DOL.GS.PacketHandler
 
         public override void SendHookPointStore(GameKeepHookPoint hookPoint)
         {
-            using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.KeepComponentHookpointStore)))
+            using (var pak = GameLoop.GetObjectForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.KeepComponentHookpointStore)))
             {
                 HookPointInventory inventory;
 

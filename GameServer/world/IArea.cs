@@ -9,7 +9,7 @@ namespace DOL.GS
 	/// - Area.Cricle
 	/// - Area.Square
 	/// </summary>
-	public interface IArea : ITranslatableObject, IPooledList<IArea>
+	public interface IArea : ITranslatableObject, ITickPooledList<IArea>
 	{
 		/// <summary>
 		/// Returns the ID of this zone
